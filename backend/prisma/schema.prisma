@@ -1,0 +1,270 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Warehouse {
+  id                 String               @id @db.Uuid
+  code               String               @unique
+  name               String
+  inventory_balances inventory_balances[]
+  reservations       reservations[]
+  stock_movements    stock_movements[]
+
+  @@map("warehouses")
+}
+
+model activity_events {
+  id                  String   @id @db.Uuid
+  order_id            String?  @db.Uuid
+  actor_id            String?  @db.Uuid
+  actor_name_snapshot String
+  actor_role          String
+  type                String
+  occurred_at         DateTime @default(now()) @db.Timestamptz(6)
+  summary             String
+  changes             String?
+  request_id          String   @db.Uuid
+  users               users?   @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders              orders?  @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@index([order_id, occurred_at, id], map: "activity_order")
+}
+
+model customers {
+  id              String   @id @db.Uuid
+  code            String
+  code_normalized String   @unique
+  name            String
+  phone           String
+  default_address String
+  active          Boolean  @default(true)
+  version         Int      @default(1)
+  orders          orders[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model delivery_attempts {
+  id             String   @id @db.Uuid
+  order_id       String   @unique(map: "one_success", where: raw("(outcome = 'DELIVERED'::text)")) @db.Uuid
+  actor_id       String   @db.Uuid
+  outcome        String
+  reason_code    String?
+  reason         String?
+  recipient_name String?
+  note           String?
+  occurred_at    DateTime @default(now()) @db.Timestamptz(6)
+  users          users    @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders         orders   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model idempotency_records {
+  actor_id        String   @db.Uuid
+  key             String
+  command         String
+  resource_id     String?  @db.Uuid
+  request_hash    String
+  response_status Int
+  response_body   Json
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  expires_at      DateTime @default(dbgenerated("(now() + '7 days'::interval)")) @db.Timestamptz(6)
+  users           users    @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([actor_id, key])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventory_balances {
+  warehouse_id String    @db.Uuid
+  product_id   String    @db.Uuid
+  on_hand      Int       @default(0)
+  reserved     Int       @default(0)
+  version      Int       @default(1)
+  products     products  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouses   Warehouse @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([warehouse_id, product_id])
+}
+
+model login_limits {
+  key        String   @id
+  started_at DateTime @db.Timestamptz(6)
+  attempts   Int
+}
+
+model order_assignments {
+  order_id                                   String    @id @db.Uuid
+  driver_id                                  String    @db.Uuid
+  driver_name_snapshot                       String
+  assigned_by                                String    @db.Uuid
+  assigned_at                                DateTime  @default(now()) @db.Timestamptz(6)
+  scheduled_date                             DateTime? @db.Date
+  loading_note                               String?
+  users_order_assignments_assigned_byTousers users     @relation("order_assignments_assigned_byTousers", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_order_assignments_driver_idTousers   users     @relation("order_assignments_driver_idTousers", fields: [driver_id], references: [id], onUpdate: NoAction)
+  orders                                     orders    @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@index([driver_id], map: "assignment_driver")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  id                 String        @id @db.Uuid
+  order_id           String        @db.Uuid
+  product_id         String        @db.Uuid
+  product_snapshot   Json
+  requested_quantity Int
+  approval_status    String        @default("PENDING")
+  approved_quantity  Int?
+  rejection_reason   String?
+  note               String?
+  orders             orders        @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products           products      @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  reservations       reservations?
+
+  @@unique([order_id, product_id])
+}
+
+model order_number_counters {
+  year       Int @id
+  next_value Int
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  id                      String             @id @db.Uuid
+  order_number            String?            @unique
+  created_by              String             @db.Uuid
+  customer_id             String?            @db.Uuid
+  status                  String
+  approval_outcome        String?
+  customer_snapshot       Json?
+  creator_name_snapshot   String
+  delivery_address        String             @default("")
+  requested_delivery_date DateTime?          @db.Date
+  notes                   String?
+  fulfillment_issue       Json?
+  version                 Int                @default(1)
+  created_at              DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime           @default(now()) @db.Timestamptz(6)
+  submitted_at            DateTime?          @db.Timestamptz(6)
+  manager_approved_at     DateTime?          @db.Timestamptz(6)
+  warehouse_confirmed_at  DateTime?          @db.Timestamptz(6)
+  dispatched_at           DateTime?          @db.Timestamptz(6)
+  delivered_at            DateTime?          @db.Timestamptz(6)
+  cancelled_at            DateTime?          @db.Timestamptz(6)
+  activity_events         activity_events[]
+  delivery_attempts       delivery_attempts?
+  order_assignments       order_assignments?
+  order_items             order_items[]
+  users                   users              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  customers               customers?         @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  reservations            reservations[]
+  stock_movements         stock_movements[]
+
+  @@index([created_by, submitted_at, id], map: "orders_owner")
+  @@index([status, submitted_at, id], map: "orders_stage")
+}
+
+model products {
+  id                 String               @id @db.Uuid
+  sku                String
+  sku_normalized     String               @unique
+  name               String
+  unit               String
+  active             Boolean              @default(true)
+  version            Int                  @default(1)
+  inventory_balances inventory_balances[]
+  order_items        order_items[]
+  reservations       reservations[]
+  stock_movements    stock_movements[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reservations {
+  id            String      @id @db.Uuid
+  order_id      String      @db.Uuid
+  order_item_id String      @unique @db.Uuid
+  warehouse_id  String      @db.Uuid
+  product_id    String      @db.Uuid
+  quantity      Int
+  state         String
+  orders        orders      @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order_items   order_items @relation(fields: [order_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products      products    @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouses    Warehouse   @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model sessions {
+  id                  String    @id @db.Uuid
+  token_hash          String    @unique
+  user_id             String    @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  last_seen_at        DateTime  @default(now()) @db.Timestamptz(6)
+  idle_expires_at     DateTime  @db.Timestamptz(6)
+  absolute_expires_at DateTime  @db.Timestamptz(6)
+  revoked_at          DateTime? @db.Timestamptz(6)
+  users               users     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([user_id], map: "sessions_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_movements {
+  id             String    @id @db.Uuid
+  warehouse_id   String    @db.Uuid
+  product_id     String    @db.Uuid
+  order_id       String?   @db.Uuid
+  type           String
+  on_hand_delta  Int
+  reserved_delta Int
+  reason         String
+  actor_id       String    @db.Uuid
+  occurred_at    DateTime  @default(now()) @db.Timestamptz(6)
+  operation_id   String    @db.Uuid
+  before_balance Json
+  after_balance  Json
+  users          users     @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders         orders?   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products       products  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouses     Warehouse @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([warehouse_id, product_id], map: "one_opening", where: raw("(type = 'OPENING'::text)"))
+  @@unique([operation_id, product_id, type])
+  @@index([product_id, occurred_at, id], map: "movement_product")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_roles {
+  user_id String @db.Uuid
+  role    String
+  users   users  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@id([user_id, role])
+}
+
+model users {
+  id                                                     String                @id @db.Uuid
+  username                                               String
+  username_normalized                                    String                @unique
+  name                                                   String
+  password_hash                                          String
+  active                                                 Boolean               @default(true)
+  must_change_password                                   Boolean               @default(true)
+  version                                                Int                   @default(1)
+  created_at                                             DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime              @default(now()) @db.Timestamptz(6)
+  activity_events                                        activity_events[]
+  delivery_attempts                                      delivery_attempts[]
+  idempotency_records                                    idempotency_records[]
+  order_assignments_order_assignments_assigned_byTousers order_assignments[]   @relation("order_assignments_assigned_byTousers")
+  order_assignments_order_assignments_driver_idTousers   order_assignments[]   @relation("order_assignments_driver_idTousers")
+  orders                                                 orders[]
+  sessions                                               sessions[]
+  stock_movements                                        stock_movements[]
+  user_roles                                             user_roles[]
+}

@@ -1,0 +1,792 @@
+"use client";
+import { useState, useRef } from "react";
+import {
+  Plus,
+  Search,
+  UserRound,
+  Boxes,
+  CheckCircle2,
+  MinusCircle,
+} from "lucide-react";
+import { useApp } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Empty } from "@/components/shared";
+import { roles, type User, type Product, type Customer } from "@/domain/types";
+import { roleLabels, formatDate, eventLabels, cairoDay } from "@/messages/ar";
+import { services, mockEnabled } from "@/services";
+import { request } from "@/services/http";
+import { StockOperations } from "./stock-operations";
+import { PasswordForm } from "@/components/auth-forms";
+import { useCommand } from "@/features/orders/hooks";
+import type { MasterKind, MasterRecord } from "@/services/contracts";
+const kindNames = {
+  users: "المستخدمون",
+  customers: "العملاء",
+  products: "المنتجات",
+};
+export function MasterPage({ kind }: { kind: MasterKind }) {
+  const { data, toast } = useApp(),
+    mutation = useCommand();
+  const [search, setSearch] = useState(""),
+    [active, setActive] = useState(""),
+    [record, setRecord] = useState<MasterRecord | null>(null);
+  const [permissionRole, setPermissionRole] = useState("SALES_MANAGER");
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const resetKey = useRef({ signature: "", key: "" });
+  const records = data[kind].filter(
+    (r) =>
+      (
+        r.name +
+        " " +
+        ("username" in r ? r.username : "sku" in r ? r.sku : r.code)
+      ).includes(search) &&
+      (!active || (active === "active") === r.active),
+  );
+  function create() {
+    setRecord(
+      kind === "users"
+        ? { id: "", name: "", username: "", roles: ["SALES_REP"], active: true }
+        : kind === "products"
+          ? { id: "", name: "", sku: "", unit: "كرتونة", active: true }
+          : {
+              id: "",
+              name: "",
+              code: "",
+              phone: "",
+              defaultAddress: "",
+              active: true,
+            },
+    );
+    mutation.reset();
+  }
+  async function save() {
+    if (!record) return;
+    await mutation
+      .mutateAsync(() =>
+        kind === "users"
+          ? services.users.save(record as User)
+          : kind === "products"
+            ? services.products.save(record as Product)
+            : services.customers.save(record as Customer),
+      )
+      .then(() => {
+        setRecord(null);
+        toast("تم حفظ البيانات الأساسية");
+      })
+      .catch(() => {});
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">إدارة البيانات الأساسية</span>
+          <h1>{kindNames[kind]}</h1>
+          <p>إضافة وتحديث وتعطيل السجلات مع الحفاظ على تاريخ الطلبات.</p>
+        </div>
+        <Button onClick={create}>
+          <Plus size={18} /> إضافة سجل
+        </Button>
+      </div>
+      <section className="panel">
+        <div className="filters">
+          <label className="search-field">
+            <Search size={18} />
+            <input
+              placeholder="البحث بالاسم أو الكود"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <label>
+            الحالة
+            <select value={active} onChange={(e) => setActive(e.target.value)}>
+              <option value="">الكل</option>
+              <option value="active">نشط</option>
+              <option value="inactive">معطل</option>
+            </select>
+          </label>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>الكود / اسم الدخول</th>
+                <th>
+                  {kind === "users"
+                    ? "الأدوار"
+                    : kind === "products"
+                      ? "الوحدة"
+                      : "التواصل والعنوان"}
+                </th>
+                <th>الحالة</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <strong>{r.name}</strong>
+                  </td>
+                  <td>
+                    <bdi>
+                      {"username" in r
+                        ? r.username
+                        : "sku" in r
+                          ? r.sku
+                          : r.code}
+                    </bdi>
+                  </td>
+                  <td>
+                    {"roles" in r ? (
+                      r.roles.map((role) => roleLabels[role]).join("، ")
+                    ) : "unit" in r ? (
+                      r.unit
+                    ) : (
+                      <>
+                        <bdi>{r.phone}</bdi>
+                        <small>{r.defaultAddress}</small>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${r.active ? "status-DELIVERED" : "status-CANCELLED"}`}
+                    >
+                      {r.active ? "نشط" : "معطل"}
+                    </span>
+                  </td>
+                  <td>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setRecord(structuredClone(r));
+                        mutation.reset();
+                      }}
+                    >
+                      تعديل
+                    </Button>
+                    {kind === "users" && !mockEnabled && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          mutation.reset();
+                          setResetUser(r as User);
+                        }}
+                      >
+                        إعادة ضبط كلمة المرور
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!records.length && <Empty />}
+        <div className="panel-note">
+          {records.length} سجل · يُستخدم التعطيل للحفاظ على السجلات التاريخية
+        </div>
+      </section>
+      <Dialog
+        open={!!resetUser}
+        onOpenChange={() => setResetUser(null)}
+        title="إعادة ضبط كلمة المرور"
+      >
+        <p>ستُلغى جلسات المستخدم ويُطلب منه تغيير كلمة المرور الجديدة.</p>
+        {mutation.error && (
+          <p className="alert error">{mutation.error.message}</p>
+        )}
+        <Button
+          disabled={mutation.isPending}
+          onClick={async () => {
+            if (!resetUser) return;
+            const signature = resetUser.id + ":" + resetUser.version;
+            if (resetKey.current.signature !== signature)
+              resetKey.current = { signature, key: crypto.randomUUID() };
+            try {
+              const r = await mutation.mutateAsync(() =>
+                request<{ temporaryPassword?: string }>(
+                  "users/" + resetUser.id + "/reset-password",
+                  "POST",
+                  { expectedVersion: resetUser.version },
+                  resetKey.current.key,
+                ),
+              );
+              setResetUser(null);
+              if ((r as { temporaryPassword?: string }).temporaryPassword)
+                window.dispatchEvent(
+                  new CustomEvent("sales-temporary-password", {
+                    detail: (r as { temporaryPassword: string })
+                      .temporaryPassword,
+                  }),
+                );
+            } catch {}
+          }}
+        >
+          تأكيد إعادة الضبط
+        </Button>
+      </Dialog>
+      {kind === "products" && (
+        <section className="panel padded permission-panel">
+          <h2>أرصدة المخزون</h2>
+          <p className="muted">الكميات الفعلية والمحجوزة والمتاحة</p>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>المنتج</th>
+                  <th>الفعلي</th>
+                  <th>المحجوز</th>
+                  <th>المتاح</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.inventory.map((b) => (
+                  <tr key={b.productId}>
+                    <td>
+                      {data.products.find((p) => p.id === b.productId)?.name}
+                    </td>
+                    <td>{b.onHand}</td>
+                    <td>{b.reserved}</td>
+                    <td>{b.onHand - b.reserved}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {kind === "users" && (
+        <section className="panel padded permission-panel">
+          <h2>صلاحيات الدور</h2>
+          <p className="muted">
+            عرض سياسة الدور؛ الإجراءات تخضع أيضًا لمرحلة الطلب ونطاق رؤيته.
+          </p>
+          <label>
+            الدور
+            <select
+              value={permissionRole}
+              onChange={(e) => setPermissionRole(e.target.value)}
+            >
+              {roles.map((r) => (
+                <option key={r} value={r}>
+                  {roleLabels[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="permission-grid">
+            {[
+              ["عرض الطلبات", true],
+              ["إنشاء الطلب", permissionRole === "SALES_REP"],
+              ["اعتماد الأصناف", permissionRole === "SALES_MANAGER"],
+              ["تأكيد المخزن", permissionRole === "WAREHOUSE_MANAGER"],
+              [
+                "تأكيد التسليم",
+                ["LOGISTICS", "DRIVER"].includes(permissionRole),
+              ],
+              ["إدارة البيانات", permissionRole === "SUPER_ADMIN"],
+            ].map(([label, allowed]) => (
+              <span
+                key={String(label)}
+                className={allowed ? "allowed" : "blocked"}
+              >
+                {allowed ? (
+                  <CheckCircle2 size={17} />
+                ) : (
+                  <MinusCircle size={17} />
+                )}{" "}
+                {label}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+      <Dialog
+        variant="drawer"
+        open={!!record}
+        onOpenChange={(v) => !v && setRecord(null)}
+        title={`${record?.id ? "تعديل" : "إضافة"} · ${kindNames[kind]}`}
+      >
+        {record && (
+          <form
+            className="form-stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <label>
+              الاسم *
+              <input
+                required
+                value={record.name}
+                onChange={(e) => setRecord({ ...record, name: e.target.value })}
+              />
+            </label>
+            {"username" in record && (
+              <>
+                <label>
+                  اسم الدخول *
+                  <input
+                    required
+                    dir="ltr"
+                    value={record.username}
+                    onChange={(e) =>
+                      setRecord({ ...record, username: e.target.value })
+                    }
+                  />
+                </label>
+                <fieldset className="roles">
+                  <legend>الأدوار *</legend>
+                  {roles.map((r) => (
+                    <label key={r}>
+                      <input
+                        type="checkbox"
+                        checked={record.roles.includes(r)}
+                        onChange={(e) =>
+                          setRecord({
+                            ...record,
+                            roles: e.target.checked
+                              ? [...record.roles, r]
+                              : record.roles.filter((role) => role !== r),
+                          })
+                        }
+                      />
+                      {roleLabels[r]}
+                    </label>
+                  ))}
+                </fieldset>
+              </>
+            )}
+            {"sku" in record && (
+              <>
+                <label>
+                  SKU *
+                  <input
+                    required
+                    dir="ltr"
+                    value={record.sku}
+                    onChange={(e) =>
+                      setRecord({ ...record, sku: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  الوحدة
+                  <input value={record.unit} readOnly />
+                </label>
+              </>
+            )}
+            {"code" in record && (
+              <>
+                <label>
+                  كود العميل *
+                  <input
+                    required
+                    dir="ltr"
+                    value={record.code}
+                    onChange={(e) =>
+                      setRecord({ ...record, code: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  الهاتف
+                  <input
+                    dir="ltr"
+                    value={record.phone}
+                    onChange={(e) =>
+                      setRecord({ ...record, phone: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  العنوان الافتراضي
+                  <textarea
+                    value={record.defaultAddress}
+                    onChange={(e) =>
+                      setRecord({ ...record, defaultAddress: e.target.value })
+                    }
+                  />
+                </label>
+              </>
+            )}
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={record.active}
+                onChange={(e) =>
+                  setRecord({ ...record, active: e.target.checked })
+                }
+              />{" "}
+              سجل نشط
+            </label>
+            {mutation.error && (
+              <div role="alert" className="alert error">
+                {mutation.error.message}
+              </div>
+            )}
+            <Button
+              disabled={mutation.isPending || !navigator.onLine}
+              type="submit"
+            >
+              {mutation.isPending ? "جارٍ الحفظ…" : "حفظ التغييرات"}
+            </Button>
+          </form>
+        )}
+      </Dialog>
+    </>
+  );
+}
+export function InventoryPage() {
+  const { data } = useApp();
+  const [search, setSearch] = useState(""),
+    [filter, setFilter] = useState("");
+  const products = new Map(
+    data.orders.flatMap((o) =>
+      o.items.map((i) => [i.productId, i.productSnapshot] as const),
+    ),
+  );
+  data.products.forEach((p) => products.set(p.id, p));
+  const rows = data.inventory.filter((b) => {
+    const p = products.get(b.productId);
+    return (
+      (!search || [p?.name, p?.sku].join(" ").includes(search)) &&
+      (!filter ||
+        (filter === "available"
+          ? b.onHand - b.reserved > 0
+          : b.onHand - b.reserved === 0))
+    );
+  });
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">المخزن الرئيسي / مخزن واحد</span>
+          <h1>أرصدة المخزون</h1>
+          <p>المتاح = الرصيد الفعلي − الكميات المحجوزة.</p>
+        </div>
+        <span className="badge partial">
+          <Boxes size={16} /> أرصدة وحركات مخزون
+        </span>
+      </div>
+      {!mockEnabled && <StockOperations />}
+      <section className="panel">
+        <div className="filters">
+          <label className="search-field">
+            <Search size={18} />
+            <input
+              placeholder="بحث بالصنف أو SKU"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <label>
+            التوفر
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="">كل الأرصدة</option>
+              <option value="available">متاح</option>
+              <option value="empty">نفد المخزون</option>
+            </select>
+          </label>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>الصنف</th>
+                <th>SKU</th>
+                <th>الوحدة</th>
+                <th>الفعلي</th>
+                <th>المحجوز</th>
+                <th>المتاح</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((b) => (
+                <tr key={b.productId}>
+                  <td>
+                    <strong>{products.get(b.productId)?.name}</strong>
+                  </td>
+                  <td>
+                    <bdi>{products.get(b.productId)?.sku}</bdi>
+                  </td>
+                  <td>{products.get(b.productId)?.unit}</td>
+                  <td>{b.onHand}</td>
+                  <td>{b.reserved}</td>
+                  <td>
+                    <span
+                      className={`badge ${b.onHand - b.reserved ? "status-DELIVERED" : "status-REJECTED"}`}
+                    >
+                      {b.onHand - b.reserved}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!rows.length && <Empty />}
+        <div className="panel-note">
+          الحجز عند تأكيد المخزن، والصرف عند الخروج؛ التسليم لا يخصم مرة ثانية.
+        </div>
+      </section>
+    </>
+  );
+}
+export function ActivityPage() {
+  const { data } = useApp();
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+  const event = data.activity.find((e) => e.id === selectedEvent);
+  const [search, setSearch] = useState(""),
+    [actor, setActor] = useState(""),
+    [type, setType] = useState(""),
+    [from, setFrom] = useState(""),
+    [to, setTo] = useState(""),
+    [page, setPage] = useState(1);
+  const rows = data.activity
+    .filter((e) => {
+      const number =
+        data.orders.find((o) => o.id === e.orderId)?.orderNumber ?? "";
+      return (
+        (!search || (number + e.summary).includes(search)) &&
+        (!actor || e.actorId === actor) &&
+        (!type || e.type === type) &&
+        (!from || cairoDay(e.occurredAt) >= from) &&
+        (!to || cairoDay(e.occurredAt) <= to)
+      );
+    })
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  const pageCount = Math.max(1, Math.ceil(rows.length / 20));
+  const current = Math.min(page, pageCount);
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">الرقابة والمتابعة</span>
+          <h1>سجل العمليات</h1>
+          <p>سجل محاكاة محلي، قابل لإعادة الضبط وليس سجل تدقيق إنتاجيًا.</p>
+        </div>
+      </div>
+      <section className="panel">
+        <div className="filters">
+          <label>
+            بحث بالطلب أو الحدث
+            <input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label>
+            المنفذ
+            <select
+              value={actor}
+              onChange={(e) => {
+                setActor(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">الكل</option>
+              {data.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            نوع الحدث
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">الكل</option>
+              {Object.entries(eventLabels).map(([v, t]) => (
+                <option key={v} value={v}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            من
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label>
+            إلى
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>الحدث / التفاصيل</th>
+                <th>المنفذ</th>
+                <th>الطلب</th>
+                <th>الوقت</th>
+                <th>التفاصيل</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice((current - 1) * 20, current * 20).map((e) => (
+                <tr key={e.id}>
+                  <td>
+                    <strong>{e.summary}</strong>
+                    {e.changes && <small>{e.changes}</small>}
+                  </td>
+                  <td>
+                    {e.actorNameSnapshot}
+                    <small>{roleLabels[e.actorRole]}</small>
+                  </td>
+                  <td>
+                    {e.orderId ? (
+                      <a href={`/orders/${e.orderId}`}>
+                        <bdi>
+                          {data.orders.find((o) => o.id === e.orderId)
+                            ?.orderNumber ?? "مسودة محذوفة"}
+                        </bdi>
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>{formatDate(e.occurredAt)}</td>
+                  <td>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSelectedEvent(e.id)}
+                    >
+                      عرض التفاصيل
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!rows.length && <Empty />}
+        <div className="pagination">
+          <span>
+            {rows.length} حدث · صفحة {current} من {pageCount}
+          </span>
+          <div className="button-row">
+            <Button
+              variant="outline"
+              disabled={current === 1}
+              onClick={() => setPage(current - 1)}
+            >
+              السابق
+            </Button>
+            <Button
+              variant="outline"
+              disabled={current === pageCount}
+              onClick={() => setPage(current + 1)}
+            >
+              التالي
+            </Button>
+          </div>
+        </div>
+      </section>
+      <Dialog
+        open={!!event}
+        onOpenChange={(v) => !v && setSelectedEvent(null)}
+        title="تفاصيل العملية"
+        description={
+          event ? (eventLabels[event.type] ?? event.type) : undefined
+        }
+      >
+        {event && (
+          <div className="form-stack">
+            <dl>
+              <dt>الطلب</dt>
+              <dd>
+                <bdi>
+                  {data.orders.find((o) => o.id === event.orderId)
+                    ?.orderNumber ?? "بيانات أساسية"}
+                </bdi>
+              </dd>
+              <dt>المستخدم</dt>
+              <dd>
+                {event.actorNameSnapshot} · {roleLabels[event.actorRole]}
+              </dd>
+              <dt>الوقت</dt>
+              <dd>{formatDate(event.occurredAt)}</dd>
+            </dl>
+            <div className="activity-detail">
+              <strong>{event.summary}</strong>
+              {event.changes && <p>{event.changes}</p>}
+            </div>
+            <Button variant="outline" onClick={() => setSelectedEvent(null)}>
+              إغلاق التفاصيل
+            </Button>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
+}
+export function ProfilePage() {
+  const { data } = useApp();
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">حسابي</span>
+          <h1>الملف الشخصي</h1>
+          <p>بيانات حسابك وصلاحياتك في النظام.</p>
+        </div>
+      </div>
+      <section className="panel padded profile">
+        <div className="profile-avatar">
+          <UserRound size={35} />
+        </div>
+        <h2>{data.user.name}</h2>
+        <p>
+          <bdi>{data.user.username}</bdi>
+        </p>
+        <div className="button-row">
+          {data.user.roles.map((r) => (
+            <span className="badge partial" key={r}>
+              {roleLabels[r]}
+            </span>
+          ))}
+        </div>
+        <div className="alert info">
+          لتعديل بيانات الحساب تواصل مع مدير النظام.
+        </div>
+      </section>
+      {!mockEnabled && (
+        <PasswordForm
+          onDone={() =>
+            window.dispatchEvent(new Event("sales-session-expired"))
+          }
+        />
+      )}
+    </>
+  );
+}

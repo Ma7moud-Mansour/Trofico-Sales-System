@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+playwright-report/
+playwright-report-api/
+test-results/
+*.tsbuildinfo
+.env.local
+.env
+.env.*.local
+.runtime/
+backend/dist/
+backend/generated/
+*.dump
