@@ -22,7 +22,8 @@
     "admin:bootstrap": "node backend/dist/cli.js bootstrap",
     "inventory:reconcile": "node backend/dist/cli.js reconcile",
     "sessions:cleanup": "node backend/dist/cli.js cleanup",
-    "test:e2e:mock": "playwright test --config playwright.config.ts"
+    "test:e2e:mock": "playwright test --config playwright.config.ts",
+    "start:hostinger": "node server.mjs"
   },
   "repository": {
     "type": "git",
@@ -70,21 +71,21 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "@types/luxon": "3.7.5",
     "@types/node": "^22.20.2",
+    "@types/pg": "8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.4",
     "prettier": "^3.9.6",
+    "prisma": "7.10.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3",
-    "vitest": "4.1.11",
-    "@types/cookie-parser": "1.4.10",
-    "@types/express": "5.0.6",
-    "@types/luxon": "3.7.5",
-    "@types/pg": "8.23.1",
     "tsx": "4.23.13",
-    "prisma": "7.10.0"
+    "typescript": "^6.0.3",
+    "vitest": "4.1.11"
   },
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || ^26.0.0"

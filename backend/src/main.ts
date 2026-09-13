@@ -74,7 +74,7 @@ function respondError(e: unknown, res: Response, id: string) {
     }),
   );
 }
-export async function start() {
+export async function start(options: { listen?: boolean } = {}) {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ["error", "warn"],
     bodyParser: true,
@@ -163,6 +163,10 @@ export async function start() {
         : next(),
     );
   });
+  if (options.listen === false) {
+    await app.init();
+    return app;
+  }
   app.enableShutdownHooks();
   await app.listen(config.PORT, "127.0.0.1");
   const stop = async () => {
