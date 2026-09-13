@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
-    "build": "prisma generate && npm run api:build && next build",
+    "build": "prisma generate && npm run api:build && next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc -p backend/tsconfig.json --noEmit",

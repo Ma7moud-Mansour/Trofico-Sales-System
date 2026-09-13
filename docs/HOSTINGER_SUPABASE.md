@@ -16,3 +16,5 @@ Do not run seeds or migrations automatically at startup. Local `.runtime` contai
 Validation of the managed entry point: eight role-specific browser login/workspace checks passed locally. Type checks and all 16 backend integration tests passed after adding the in-process Nest initialization option. External deployment verification must additionally check HTTPS, login, authenticated API requests, and runtime database connectivity.
 
 Hostinger dependency installation initially failed because its Python 3.6 cannot build node-argon2. The backend now uses the prebuilt @node-rs/argon2 implementation with identical Argon2id memory/time/parallelism parameters. Existing password hashes remained compatible in the integration suite.
+
+Managed build requires NPM_CONFIG_INCLUDE=dev because TypeScript declarations and CSS build tools are dev dependencies. The build uses next build --webpack: Hostinger's current glibc cannot load Next 16.3 native SWC; Webpack permits Next's supported WASM compiler fallback.
