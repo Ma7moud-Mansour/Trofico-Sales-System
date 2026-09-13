@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { z } from "zod";
+import { fileURLToPath } from "node:url";
 export const config = z
   .object({
     DATABASE_URL: z.string().startsWith("postgres"),
@@ -21,9 +22,17 @@ if (
     config.ALLOWED_ORIGINS.split(",").some((x) => !x.startsWith("https://")))
 )
   throw Error("Production requires HTTPS origins and secure cookies");
+const connectionUrl = new URL(config.DATABASE_URL);
+if (connectionUrl.hostname.endsWith(".pooler.supabase.com")) {
+  connectionUrl.searchParams.set("sslmode", "verify-full");
+  connectionUrl.searchParams.set(
+    "sslrootcert",
+    fileURLToPath(new URL("../certs/supabase-ca.crt", import.meta.url)),
+  );
+}
 export const db = new PrismaClient({
   adapter: new PrismaPg({
-    connectionString: config.DATABASE_URL,
+    connectionString: connectionUrl.href,
     max: config.DB_POOL_MAX,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000,

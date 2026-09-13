@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import * as argon from "argon2";
+import * as argon from "@node-rs/argon2";
 import {
   type Tx,
   type Row,
@@ -22,7 +22,7 @@ export const digest = (s: string) =>
   createHash("sha256").update(s).digest("hex");
 export const hashPassword = (s: string) =>
   argon.hash(s, {
-    type: argon.argon2id,
+    algorithm: argon.Algorithm.Argon2id,
     memoryCost: 65536,
     timeCost: 3,
     parallelism: 1,
