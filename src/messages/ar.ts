@@ -10,7 +10,8 @@ export const roleLabels: Record<Role, string> = {
 };
 export const statusLabels: Record<Status, string> = {
   DRAFT: "مسودة",
-  PENDING_APPROVAL: "بانتظار اعتماد الإدارة",
+  PENDING_FINANCE: "بانتظار توصية الحسابات",
+  PENDING_MANAGER: "بانتظار قرار المدير",
   MANAGER_APPROVED: "معتمد من الإدارة",
   WAREHOUSE_CONFIRMED: "جاهز للصرف",
   IN_TRANSIT: "قيد التوصيل",
@@ -30,10 +31,11 @@ export const decisionLabels = {
 };
 export const nextOwner: Record<Status, string> = {
   DRAFT: "مندوب المبيعات",
-  PENDING_APPROVAL: "المدير التجاري",
+  PENDING_FINANCE: "الحسابات",
+  PENDING_MANAGER: "المدير التجاري",
   MANAGER_APPROVED: "المخزن",
-  WAREHOUSE_CONFIRMED: "الحركة",
-  IN_TRANSIT: "الحركة / السائق",
+  WAREHOUSE_CONFIRMED: "المخزن لتسليم السائق",
+  IN_TRANSIT: "السائق",
   DELIVERED: "مكتمل",
   REJECTED: "أغلق الطلب",
   CANCELLED: "أغلق الطلب",
@@ -41,6 +43,7 @@ export const nextOwner: Record<Status, string> = {
 export const eventLabels: Record<string, string> = {
   DRAFT: "حفظ مسودة",
   SUBMIT: "إرسال الطلب",
+  FINANCE_RECOMMENDATION: "توصية الحسابات",
   REVIEW: "إنهاء مراجعة الإدارة",
   WAREHOUSE: "تأكيد المخزن",
   ASSIGN: "تعيين سائق",
@@ -49,6 +52,9 @@ export const eventLabels: Record<string, string> = {
   FAILED: "محاولة تسليم متعثرة",
   CANCEL: "إلغاء الطلب",
   STOCK: "ملاحظة نقص مخزون",
+  STOCK_RECEIPT_REQUEST: "تسجيل وارد",
+  STOCK_RECEIPT_APPROVED: "اعتماد وارد",
+  STOCK_RECEIPT_REJECTED: "رفض وارد",
   MASTER: "تعديل البيانات الأساسية",
 };
 export const ar = {

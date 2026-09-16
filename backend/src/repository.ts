@@ -13,8 +13,11 @@ export function camel(row: Row): Row {
   );
 }
 export const has = (u: Actor, ...r: string[]) =>
-  u.active && r.some((x) => u.roles.includes(x));
+  u.active &&
+  (u.roles.includes("SUPER_ADMIN") || r.some((x) => u.roles.includes(x)));
 export function scope(u: Actor, offset = 1) {
+  if (u.active && u.roles.includes("SUPER_ADMIN"))
+    return { sql: "true", args: [] as unknown[] };
   const broad = has(
     u,
     "SALES_MANAGER",
@@ -204,7 +207,8 @@ export async function listOrders(
         .toUTC()
         .toISO(),
     );
-  if (f.scope === "/approvals") clauses.push("o.status='PENDING_APPROVAL'");
+  if (f.scope === "/finance") clauses.push("o.status='PENDING_FINANCE'");
+  if (f.scope === "/approvals") clauses.push("o.status='PENDING_MANAGER'");
   if (f.scope === "/warehouse")
     clauses.push("o.status IN ('MANAGER_APPROVED','WAREHOUSE_CONFIRMED')");
   if (f.scope === "/logistics")
@@ -220,11 +224,11 @@ export async function listOrders(
   if (f.tab === "submitted") clauses.push("o.status<>'DRAFT'");
   if (f.tab === "mine") {
     const c: string[] = [];
-    if (has(u, "SALES_MANAGER")) c.push("o.status='PENDING_APPROVAL'");
-    if (has(u, "WAREHOUSE_MANAGER")) c.push("o.status='MANAGER_APPROVED'");
-    if (has(u, "LOGISTICS"))
-      c.push("o.status IN ('WAREHOUSE_CONFIRMED','IN_TRANSIT')");
-    else if (has(u, "DRIVER")) {
+    if (has(u, "FINANCE")) c.push("o.status='PENDING_FINANCE'");
+    if (has(u, "SALES_MANAGER")) c.push("o.status='PENDING_MANAGER'");
+    if (has(u, "WAREHOUSE_MANAGER"))
+      c.push("o.status IN ('MANAGER_APPROVED','WAREHOUSE_CONFIRMED')");
+    if (has(u, "DRIVER")) {
       args.push(u.id);
       c.push(
         `o.status IN ('WAREHOUSE_CONFIRMED','IN_TRANSIT') AND EXISTS(SELECT 1 FROM order_assignments a WHERE a.order_id=o.id AND a.driver_id=$${args.length}::uuid)`,

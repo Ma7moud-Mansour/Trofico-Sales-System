@@ -21,7 +21,7 @@ import { readEndpoint } from "./queries.js";
 import { getOrder, camel } from "./repository.js";
 import { rows } from "./db.js";
 import { draft, orderCommand, authorizeCommand } from "./orders.js";
-import { master, resetPassword, stock } from "./masters.js";
+import { master, resetPassword, stock, reviewStockReceipt } from "./masters.js";
 function stable(x: unknown): string {
   if (x === null || typeof x !== "object") return JSON.stringify(x);
   if (Array.isArray(x)) return "[" + x.map(stable).join(",") + "]";
@@ -81,7 +81,7 @@ export async function handle(req: Request, res: Response, requestId: string) {
           requireRole(u, "SUPER_ADMIN");
           const migration = await one(
             tx,
-            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609110001_initial'`,
+            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609160001_legacy_finance_queue'`,
           );
           check(migration, 503, "NOT_READY", "الخدمة غير جاهزة");
           return { ready: true };
@@ -128,6 +128,9 @@ export async function handle(req: Request, res: Response, requestId: string) {
     const masterMatch = path.match(
       /^(users|customers|products)(?:\/([0-9a-f-]{36}))?(\/reset-password)?$/i,
     );
+    const receiptMatch = path.match(
+      /^inventory\/receipts\/([0-9a-f-]{36})\/(approve|reject)$/i,
+    );
     const prior = await one<{ request_hash: string; response_body: unknown }>(
       tx,
       "SELECT request_hash,response_body FROM idempotency_records WHERE actor_id=$1::uuid AND key=$2 AND expires_at>now()",
@@ -142,7 +145,12 @@ export async function handle(req: Request, res: Response, requestId: string) {
     ) {
       requireRole(u, "SALES_REP");
       const previous = prior.response_body as { createdBy?: string };
-      check(previous.createdBy === u.id, 404, "NOT_FOUND", "الطلب غير موجود");
+      check(
+        previous.createdBy === u.id || u.roles.includes("SUPER_ADMIN"),
+        404,
+        "NOT_FOUND",
+        "الطلب غير موجود",
+      );
       return prior.response_body;
     }
     let existingOrder;
@@ -153,9 +161,14 @@ export async function handle(req: Request, res: Response, requestId: string) {
       if (action in commandSchemas)
         authorizeCommand(u, existingOrder, action, true);
     }
-    if (masterMatch) requireRole(u, "SUPER_ADMIN");
-    if (path.startsWith("inventory/"))
-      requireRole(u, "SUPER_ADMIN", "WAREHOUSE_MANAGER");
+    if (masterMatch)
+      requireRole(
+        u,
+        ...(masterMatch[1] === "users" ? ["SUPER_ADMIN"] : ["FINANCE"]),
+      );
+    if (receiptMatch) requireRole(u, "FINANCE");
+    else if (path === "inventory/receipts") requireRole(u, "WAREHOUSE_MANAGER");
+    else if (path.startsWith("inventory/")) requireRole(u, "SUPER_ADMIN");
     if (path === "orders") requireRole(u, "SALES_REP");
     if (prior) {
       check(
@@ -220,6 +233,15 @@ export async function handle(req: Request, res: Response, requestId: string) {
           requestId,
         );
       }
+    } else if (receiptMatch && req.method === "POST") {
+      result = await reviewStockReceipt(
+        tx,
+        u,
+        receiptMatch[1],
+        receiptMatch[2] as "approve" | "reject",
+        req.body,
+        requestId,
+      );
     } else if (
       /^inventory\/(openings|receipts|adjustments)$/.test(path) &&
       req.method === "POST"

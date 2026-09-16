@@ -10,7 +10,8 @@ export const roles = [
 export type Role = (typeof roles)[number];
 export const statuses = [
   "DRAFT",
-  "PENDING_APPROVAL",
+  "PENDING_FINANCE",
+  "PENDING_MANAGER",
   "MANAGER_APPROVED",
   "WAREHOUSE_CONFIRMED",
   "IN_TRANSIT",
@@ -77,6 +78,10 @@ export interface Order {
   notes?: string;
   status: Status;
   approvalOutcome?: Outcome;
+  financeRecommendation?: "APPROVE" | "REJECT";
+  financeNote?: string;
+  financeReviewedBy?: string;
+  financeReviewedAt?: string;
   items: OrderItem[];
   assignment?: Assignment;
   fulfillmentIssue?: { type: "STOCK" | "DELIVERY"; reason: string };
@@ -90,6 +95,22 @@ export interface InventoryBalance {
   productId: string;
   onHand: number;
   reserved: number;
+  version: number;
+}
+export interface StockReceipt {
+  id: string;
+  productId: string;
+  productName: string;
+  productSku: string;
+  quantity: number;
+  reason: string;
+  status: "PENDING_FINANCE" | "APPROVED" | "REJECTED";
+  createdBy: string;
+  createdByNameSnapshot: string;
+  createdAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  financeNote?: string;
   version: number;
 }
 export interface Reservation {
@@ -130,6 +151,7 @@ export interface Database {
   products: Product[];
   orders: Order[];
   inventory: InventoryBalance[];
+  stockReceipts: StockReceipt[];
   reservations: Reservation[];
   attempts: DeliveryAttempt[];
   activity: ActivityEvent[];
@@ -147,7 +169,7 @@ export type DomainErrorCode =
   | "NETWORK_ERROR"
   | "STORAGE_ERROR";
 export class DomainError extends Error {
-  fieldErrors?: Record<string,string[]>;
+  fieldErrors?: Record<string, string[]>;
   constructor(
     public code: DomainErrorCode,
     message: string,
@@ -166,7 +188,12 @@ export interface SaveDraftInput {
   items: { id: string; productId: string; quantity: string; note?: string }[];
 }
 export interface ReviewInput {
+  source?: "MANUAL" | "FINANCE_RECOMMENDATION";
   decisions: { itemId: string; status: Decision; reason?: string }[];
+}
+export interface FinanceRecommendationInput {
+  recommendation: "APPROVE" | "REJECT";
+  note: string;
 }
 export interface AssignmentInput {
   driverId: string;
@@ -211,6 +238,7 @@ export interface ViewData {
   products: Product[];
   orders: Order[];
   inventory: InventoryBalance[];
+  stockReceipts: StockReceipt[];
   reservations: Reservation[];
   attempts: DeliveryAttempt[];
   activity: ActivityEvent[];

@@ -60,6 +60,7 @@ function Detail({ order: o }: { order: Order }) {
     [driver, setDriver] = useState(o.assignment?.driverId ?? ""),
     [scheduled, setScheduled] = useState(o.assignment?.scheduledDate ?? ""),
     [note, setNote] = useState(""),
+    [financeNote, setFinanceNote] = useState(""),
     [failureType, setFailureType] = useState("العميل غير متاح");
   const [review, setReview] = useState<ReviewInput["decisions"]>(
     o.items.map((i) => ({ itemId: i.id, status: "PENDING", reason: "" })),
@@ -96,10 +97,40 @@ function Detail({ order: o }: { order: Order }) {
     await mutation
       .mutateAsync(async () => {
         switch (dialog) {
+          case "financeApprove":
+          case "financeReject":
+            await services.orders.recommendFinance(
+              o.id,
+              {
+                recommendation:
+                  dialog === "financeApprove" ? "APPROVE" : "REJECT",
+                note: financeNote,
+              },
+              meta,
+            );
+            break;
+          case "applyFinance": {
+            const approved = o.financeRecommendation === "APPROVE";
+            await services.orders.finalizeReview(
+              o.id,
+              {
+                source: "FINANCE_RECOMMENDATION",
+                decisions: o.items.map((item) => ({
+                  itemId: item.id,
+                  status: approved ? "APPROVED" : "REJECTED",
+                  reason: approved
+                    ? undefined
+                    : o.financeNote || "تنفيذ توصية الحسابات بعدم الموافقة",
+                })),
+              },
+              meta,
+            );
+            break;
+          }
           case "review":
             await services.orders.finalizeReview(
               o.id,
-              { decisions: review },
+              { source: "MANUAL", decisions: review },
               meta,
             );
             setDirty(false);
@@ -153,6 +184,9 @@ function Detail({ order: o }: { order: Order }) {
       .catch(() => {});
   }
   const dialogTitles: Record<string, string> = {
+    financeApprove: "توصية الحسابات بالموافقة",
+    financeReject: "توصية الحسابات بعدم الموافقة",
+    applyFinance: "تنفيذ توصية الحسابات",
     review: "تأكيد إنهاء المراجعة",
     warehouse: "تأكيد الجاهزية وحجز الكميات",
     assign: "تعيين سائق",
@@ -202,8 +236,51 @@ function Detail({ order: o }: { order: Order }) {
             </Button>
           </>
         )}
+        {canActOnOrder(user, o, "finance") && (
+          <>
+            <div className="alert info">
+              توصية الحسابات رأي استشاري. القرار النهائي يصدر من المدير.
+            </div>
+            <Button
+              onClick={() => {
+                setFinanceNote("");
+                open("financeApprove");
+              }}
+            >
+              <Check size={17} /> أوصي بالموافقة
+            </Button>
+            <Button
+              variant="outline"
+              className="danger-text"
+              onClick={() => {
+                setFinanceNote("");
+                open("financeReject");
+              }}
+            >
+              أوصي بعدم الموافقة
+            </Button>
+          </>
+        )}
         {isReview && (
           <>
+            {o.financeRecommendation && (
+              <div
+                className={`alert ${o.financeRecommendation === "APPROVE" ? "info" : "warning"}`}
+              >
+                <strong>
+                  توصية الحسابات:{" "}
+                  {o.financeRecommendation === "APPROVE"
+                    ? "موافقة"
+                    : "عدم موافقة"}
+                </strong>
+                {o.financeNote && <p>{o.financeNote}</p>}
+              </div>
+            )}
+            {o.financeRecommendation && (
+              <Button onClick={() => open("applyFinance")}>
+                تنفيذ توصية الحسابات
+              </Button>
+            )}
             <div className="review-counts">
               <span>
                 معتمد <b>{approved}</b>
@@ -287,7 +364,7 @@ function Detail({ order: o }: { order: Order }) {
         {canActOnOrder(user, o, "dispatch") && (
           <>
             <Button disabled={!o.assignment} onClick={() => open("dispatch")}>
-              <Truck size={18} /> بدء التوصيل
+              <Truck size={18} /> تسليم الطلب للسائق
             </Button>
             {!o.assignment && <small>يجب تعيين سائق أولًا.</small>}
           </>
@@ -313,6 +390,7 @@ function Detail({ order: o }: { order: Order }) {
         )}
         {![
           "edit",
+          "finance",
           "review",
           "warehouse",
           "assign",
@@ -404,6 +482,22 @@ function Detail({ order: o }: { order: Order }) {
       <section className="panel progress-panel">
         <Stepper order={o} events={events} />
       </section>
+      {o.financeRecommendation && (
+        <div
+          className={`alert ${o.financeRecommendation === "APPROVE" ? "info" : "warning"}`}
+        >
+          <div>
+            <strong>
+              توصية الحسابات:{" "}
+              {o.financeRecommendation === "APPROVE"
+                ? "الموافقة"
+                : "عدم الموافقة"}
+            </strong>
+            <p>{o.financeNote || "لا توجد ملاحظات إضافية."}</p>
+            <small>التوصية استشارية، وقرار الإدارة هو القرار النهائي.</small>
+          </div>
+        </div>
+      )}
       {o.fulfillmentIssue && (
         <div className="alert warning">
           <AlertTriangle size={20} />
@@ -742,6 +836,33 @@ function Detail({ order: o }: { order: Order }) {
                 : "سينتقل الطلب إلى المخزن."}
             </div>
           )}
+          {["financeApprove", "financeReject"].includes(dialog) && (
+            <>
+              <div className="alert info">
+                سيتم إرسال التوصية إلى المدير التجاري، ويمكنه تنفيذها أو اتخاذ
+                قرار كامل أو جزئي مختلف.
+              </div>
+              <label>
+                ملاحظة الحسابات {dialog === "financeReject" ? "*" : "(اختياري)"}
+                <textarea
+                  value={financeNote}
+                  onChange={(e) => setFinanceNote(e.target.value)}
+                  rows={4}
+                  maxLength={1000}
+                />
+              </label>
+            </>
+          )}
+          {dialog === "applyFinance" && (
+            <div className="alert info">
+              سيصدر قرار الإدارة النهائي بتطبيق توصية الحسابات على كل أصناف
+              الطلب:{" "}
+              {o.financeRecommendation === "APPROVE"
+                ? "اعتماد كامل"
+                : "رفض كامل"}
+              .
+            </div>
+          )}
           {dialog === "warehouse" && (
             <p>
               سيتم حجز جميع الكميات المعتمدة مرة واحدة بعد إعادة فحص الرصيد.
@@ -749,8 +870,9 @@ function Detail({ order: o }: { order: Order }) {
           )}
           {dialog === "dispatch" && (
             <p>
-              أؤكد خروج جميع الأصناف المعتمدة مع{" "}
-              {o.assignment?.driverNameSnapshot}. سيصرف المخزون المحجوز.
+              أؤكد أن المخزن سلّم جميع الأصناف المعتمدة إلى{" "}
+              {o.assignment?.driverNameSnapshot}. سيُصرف المخزون المحجوز وتبدأ
+              مهمة السائق.
             </p>
           )}
           {dialog === "assign" && (
@@ -869,7 +991,8 @@ function Detail({ order: o }: { order: Order }) {
                 (dialog === "failed" &&
                   failureType === "أخرى" &&
                   !reason.trim()) ||
-                (dialog === "assign" && !driver)
+                (dialog === "assign" && !driver) ||
+                (dialog === "financeReject" && !financeNote.trim())
               }
               onClick={() => {
                 if (dialog === "rejectAll") {

@@ -4,6 +4,7 @@ import type {
   Page,
   SaveDraftInput,
   ReviewInput,
+  FinanceRecommendationInput,
   AssignmentInput,
   DeliveryInput,
   FailedAttemptInput,
@@ -19,6 +20,11 @@ export interface OrdersService {
   get(id: string): Promise<Order>;
   saveDraft(input: SaveDraftInput, meta: MutationMeta): Promise<Order>;
   submit(id: string, meta: MutationMeta): Promise<Order>;
+  recommendFinance(
+    id: string,
+    input: FinanceRecommendationInput,
+    meta: MutationMeta,
+  ): Promise<Order>;
   finalizeReview(
     id: string,
     input: ReviewInput,

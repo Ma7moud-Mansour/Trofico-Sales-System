@@ -281,12 +281,29 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
           <div className="permission-grid">
             {[
               ["عرض الطلبات", true],
-              ["إنشاء الطلب", permissionRole === "SALES_REP"],
-              ["اعتماد الأصناف", permissionRole === "SALES_MANAGER"],
-              ["تأكيد المخزن", permissionRole === "WAREHOUSE_MANAGER"],
+              [
+                "إنشاء الطلب",
+                ["SALES_REP", "SUPER_ADMIN"].includes(permissionRole),
+              ],
+              [
+                "توصية الحسابات",
+                ["FINANCE", "SUPER_ADMIN"].includes(permissionRole),
+              ],
+              [
+                "قرار الاعتماد النهائي",
+                ["SALES_MANAGER", "SUPER_ADMIN"].includes(permissionRole),
+              ],
+              [
+                "تسجيل الوارد وتجهيز وتسليم السائق",
+                ["WAREHOUSE_MANAGER", "SUPER_ADMIN"].includes(permissionRole),
+              ],
               [
                 "تأكيد التسليم",
-                ["LOGISTICS", "DRIVER"].includes(permissionRole),
+                ["DRIVER", "SUPER_ADMIN"].includes(permissionRole),
+              ],
+              [
+                "إدارة العملاء والمنتجات واعتماد الوارد",
+                ["FINANCE", "SUPER_ADMIN"].includes(permissionRole),
               ],
               ["إدارة البيانات", permissionRole === "SUPER_ADMIN"],
             ].map(([label, allowed]) => (
@@ -423,7 +440,9 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                   setRecord({ ...record, active: e.target.checked })
                 }
               />{" "}
-              سجل نشط
+              {kind === "users"
+                ? "الحساب نشط (إلغاء التحديد يعطّل الحساب مع حفظ سجله)"
+                : "سجل نشط"}
             </label>
             {mutation.error && (
               <div role="alert" className="alert error">
@@ -569,7 +588,11 @@ export function ActivityPage() {
         <div>
           <span className="eyebrow">الرقابة والمتابعة</span>
           <h1>سجل العمليات</h1>
-          <p>سجل محاكاة محلي، قابل لإعادة الضبط وليس سجل تدقيق إنتاجيًا.</p>
+          <p>
+            {mockEnabled
+              ? "سجل محاكاة محلي قابل لإعادة الضبط."
+              : "سجل تدقيق لجميع إجراءات الحسابات والمستخدمين مع المنفذ والوقت والتغييرات."}
+          </p>
         </div>
       </div>
       <section className="panel">

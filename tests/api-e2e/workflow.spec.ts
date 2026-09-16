@@ -130,6 +130,16 @@ test("B28 B29 production UI using real sessions and PostgreSQL through all roles
     .click();
   await expect(page).toHaveURL(/orders\/[a-f0-9-]{36}$/);
   const url = page.url();
+  await switchUser(page, "FINANCE");
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: "أوصي بالموافقة", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByLabel(/ملاحظة الحسابات/)
+    .fill("الحسابات توصي بالتنفيذ");
+  await confirm(page);
   await switchUser(page, "SALES_MANAGER");
   await page.goto(url);
   await page.getByRole("radio", { name: "اعتماد الصنف" }).first().check();
@@ -151,14 +161,14 @@ test("B28 B29 production UI using real sessions and PostgreSQL through all roles
   await expect(
     page.getByText("جاهز للصرف", { exact: true }).first(),
   ).toBeVisible();
-  await switchUser(page, "LOGISTICS");
-  await page.goto(url);
   await page.getByRole("button", { name: "تعيين سائق", exact: true }).click();
   await page
     .getByRole("combobox", { name: "السائق", exact: true })
     .selectOption(accounts.find((a) => a.role === "DRIVER")!.id);
   await confirm(page);
-  await page.getByRole("button", { name: "بدء التوصيل", exact: true }).click();
+  await page
+    .getByRole("button", { name: "تسليم الطلب للسائق", exact: true })
+    .click();
   await confirm(page);
   await switchUser(page, "DRIVER");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -193,7 +203,7 @@ test("B28 B29 production UI using real sessions and PostgreSQL through all roles
     fullPage: true,
   });
 });
-test("Admin screens use real data; inventory movement UI and password reset", async ({
+test("Admin screens use real data; warehouse receipt waits for finance approval", async ({
   page,
 }) => {
   await login(page, "SUPER_ADMIN");
@@ -207,22 +217,34 @@ test("Admin screens use real data; inventory movement UI and password reset", as
     await page.goto(path);
     await expect(page.locator("main h1")).toBeVisible();
   }
+  await switchUser(page, "WAREHOUSE_MANAGER");
   await page.goto("/inventory");
-  await page.getByRole("button", { name: "إضافة حركة مخزون" }).click();
+  await page.getByRole("button", { name: "تسجيل وارد جديد" }).click();
   await page
     .getByRole("dialog")
     .getByRole("combobox", { name: "الصنف", exact: true })
     .selectOption({ index: 1 });
   await page
     .getByRole("dialog")
-    .getByLabel("الكمية", { exact: true })
+    .getByLabel("الكمية الواردة", { exact: true })
     .fill("2");
   await page
     .getByRole("dialog")
-    .getByLabel("السبب / المرجع", { exact: true })
+    .getByLabel("رقم الإذن / المورد / المرجع", { exact: true })
     .fill("استلام اختبار واجهة");
-  await page.getByRole("button", { name: "تأكيد تسجيل الحركة" }).click();
+  await page.getByRole("button", { name: "إرسال للموافقة" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(
+    page.getByText("بانتظار الحسابات", { exact: true }).first(),
+  ).toBeVisible();
+  await switchUser(page, "FINANCE");
+  await page.goto("/inventory");
+  const row = page.getByRole("row").filter({ hasText: "استلام اختبار واجهة" });
+  await row.getByRole("button", { name: "اعتماد", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "تأكيد الاعتماد", exact: true })
+    .click();
   await expect(
     page
       .getByRole("cell", { name: "استلام اختبار واجهة", exact: true })

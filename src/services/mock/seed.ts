@@ -14,7 +14,7 @@ export function createSeed(now = new Date().toISOString()): Database {
     "عمر خالد",
     "يوسف علي",
     "كريم سعيد",
-    "مدير النظام",
+    "د. محمد صبري",
   ];
   const rs: Role[] = [
     "SALES_REP",
@@ -97,18 +97,20 @@ export function createSeed(now = new Date().toISOString()): Database {
       reserved: 0,
       version: 1,
     })),
+    stockReceipts: [],
     reservations: [],
     attempts: [],
     activity: [],
     receipts: {},
   };
   const ss: Status[] = [
-    "PENDING_APPROVAL",
+    "PENDING_FINANCE",
+    "PENDING_MANAGER",
     "MANAGER_APPROVED",
     "WAREHOUSE_CONFIRMED",
     "IN_TRANSIT",
     "DELIVERED",
-    "PENDING_APPROVAL",
+    "PENDING_FINANCE",
     "REJECTED",
     "MANAGER_APPROVED",
     "DRAFT",
@@ -135,9 +137,12 @@ export function createSeed(now = new Date().toISOString()): Database {
       status,
       items: [0, 1].map((_, j) => {
         const p = products[(n + j) % 12];
-        const reviewed = !["DRAFT", "PENDING_APPROVAL", "CANCELLED"].includes(
-          status,
-        );
+        const reviewed = ![
+          "DRAFT",
+          "PENDING_FINANCE",
+          "PENDING_MANAGER",
+          "CANCELLED",
+        ].includes(status);
         const rejected =
           status === "REJECTED" || (reviewed && n % 3 === 1 && j === 1);
         return {
@@ -161,9 +166,22 @@ export function createSeed(now = new Date().toISOString()): Database {
       updatedAt: time,
       version: 1,
     };
-    if (!["DRAFT", "PENDING_APPROVAL", "CANCELLED"].includes(status))
+    if (
+      !["DRAFT", "PENDING_FINANCE", "PENDING_MANAGER", "CANCELLED"].includes(
+        status,
+      )
+    )
       o.approvalOutcome =
         status === "REJECTED" ? "NONE" : n % 3 === 1 ? "PARTIAL" : "FULL";
+    if (!["DRAFT", "PENDING_FINANCE"].includes(status)) {
+      o.financeRecommendation = n % 4 === 0 ? "REJECT" : "APPROVE";
+      o.financeNote =
+        o.financeRecommendation === "REJECT"
+          ? "يوجد رصيد مستحق يحتاج قرار الإدارة"
+          : "الحد الائتماني يسمح بالتنفيذ";
+      o.financeReviewedBy = "u5";
+      o.financeReviewedAt = time;
+    }
     const event = (type: string, actor: string, summary: string) =>
       db.activity.push({
         id: `e${n}-${type}`,
@@ -177,7 +195,9 @@ export function createSeed(now = new Date().toISOString()): Database {
       });
     event("DRAFT", o.createdBy, "إنشاء الطلب");
     if (status !== "DRAFT")
-      event("SUBMIT", o.createdBy, "إرسال الطلب إلى الإدارات");
+      event("SUBMIT", o.createdBy, "إرسال الطلب إلى الحسابات");
+    if (o.financeRecommendation)
+      event("FINANCE_RECOMMENDATION", "u5", "تسجيل توصية الحسابات");
     if (o.approvalOutcome) event("REVIEW", "u3", "إنهاء مراجعة أصناف الطلب");
     if (["WAREHOUSE_CONFIRMED", "IN_TRANSIT", "DELIVERED"].includes(status)) {
       event("WAREHOUSE", "u4", "حجز جميع الكميات المعتمدة");
@@ -202,25 +222,25 @@ export function createSeed(now = new Date().toISOString()): Database {
         o.assignment = {
           driverId: n % 2 ? "u7" : "u8",
           driverNameSnapshot: users[n % 2 ? 6 : 7].name,
-          assignedBy: "u6",
+          assignedBy: "u4",
           assignedAt: time,
         };
-        event("ASSIGN", "u6", "إسناد الطلب للسائق");
+        event("ASSIGN", "u4", "إسناد الطلب للسائق");
       }
     }
     if (["IN_TRANSIT", "DELIVERED"].includes(status))
-      event("DISPATCH", "u6", "خروج كل البنود المعتمدة");
+      event("DISPATCH", "u4", "تسليم الطلب للسائق");
     if (status === "DELIVERED") {
       o.deliveredAt = time;
       db.attempts.push({
         id: `a${n}`,
         orderId: o.id,
-        actorId: "u6",
+        actorId: n % 2 ? "u7" : "u8",
         outcome: "DELIVERED",
         recipientName: "مسؤول الاستلام",
         occurredAt: time,
       });
-      event("DELIVER", "u6", "تم التسليم إلى مسؤول الاستلام");
+      event("DELIVER", n % 2 ? "u7" : "u8", "تم التسليم إلى مسؤول الاستلام");
     }
     if (status === "IN_TRANSIT" && n % 12 === 11) {
       o.fulfillmentIssue = { type: "DELIVERY", reason: "العميل غير متاح" };

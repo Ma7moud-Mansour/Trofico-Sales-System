@@ -56,9 +56,21 @@ export const draftSchema = z
   .strict();
 export const commandSchemas = {
   submit: z.object({ expectedVersion: version }).strict(),
+  "finance-recommendation": z
+    .object({
+      expectedVersion: version,
+      recommendation: z.enum(["APPROVE", "REJECT"]),
+      note,
+    })
+    .strict()
+    .refine((x) => x.recommendation !== "REJECT" || x.note.length > 0, {
+      message: "سبب توصية الرفض مطلوب",
+      path: ["note"],
+    }),
   review: z
     .object({
       expectedVersion: version,
+      source: z.enum(["MANUAL", "FINANCE_RECOMMENDATION"]).optional(),
       decisions: z
         .array(
           z
@@ -156,13 +168,20 @@ export const stockSchema = z
     expectedVersion: version,
   })
   .strict();
+export const stockReceiptReviewSchema = z
+  .object({
+    expectedVersion: version,
+    note,
+  })
+  .strict();
 export const querySchema = z
   .object({
     search: z.string().max(200).optional(),
     status: z
       .enum([
         "DRAFT",
-        "PENDING_APPROVAL",
+        "PENDING_FINANCE",
+        "PENDING_MANAGER",
         "MANAGER_APPROVED",
         "WAREHOUSE_CONFIRMED",
         "IN_TRANSIT",

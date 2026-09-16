@@ -6,12 +6,14 @@ import {
   type InventoryBalance,
 } from "./types";
 export const hasRole = (u: User, ...r: Role[]) =>
-  u.active && r.some((role) => u.roles.includes(role));
+  u.active &&
+  (u.roles.includes("SUPER_ADMIN") || r.some((role) => u.roles.includes(role)));
 export function canViewOrder(u: User, o: Order) {
   return (
     u.active &&
     (o.status === "DRAFT"
-      ? hasRole(u, "SALES_REP") && o.createdBy === u.id
+      ? u.roles.includes("SUPER_ADMIN") ||
+        (hasRole(u, "SALES_REP") && o.createdBy === u.id)
       : hasRole(
           u,
           "SALES_MANAGER",
@@ -27,18 +29,20 @@ export function canCancel(u: User, o: Order) {
   return (
     [
       "DRAFT",
-      "PENDING_APPROVAL",
+      "PENDING_FINANCE",
+      "PENDING_MANAGER",
       "MANAGER_APPROVED",
       "WAREHOUSE_CONFIRMED",
     ].includes(o.status) &&
     ((hasRole(u, "SALES_MANAGER", "SUPER_ADMIN") && o.status !== "DRAFT") ||
       (hasRole(u, "SALES_REP") &&
-        u.id === o.createdBy &&
-        ["DRAFT", "PENDING_APPROVAL"].includes(o.status)))
+        (u.roles.includes("SUPER_ADMIN") || u.id === o.createdBy) &&
+        ["DRAFT", "PENDING_FINANCE", "PENDING_MANAGER"].includes(o.status)))
   );
 }
 export type Action =
   | "edit"
+  | "finance"
   | "review"
   | "warehouse"
   | "assign"
@@ -52,26 +56,30 @@ export function canActOnOrder(u: User, o: Order, a: Action) {
   switch (a) {
     case "edit":
       return (
-        o.status === "DRAFT" && o.createdBy === u.id && hasRole(u, "SALES_REP")
+        o.status === "DRAFT" &&
+        (o.createdBy === u.id || u.roles.includes("SUPER_ADMIN")) &&
+        hasRole(u, "SALES_REP")
       );
+    case "finance":
+      return hasRole(u, "FINANCE") && o.status === "PENDING_FINANCE";
     case "review":
-      return hasRole(u, "SALES_MANAGER") && o.status === "PENDING_APPROVAL";
+      return hasRole(u, "SALES_MANAGER") && o.status === "PENDING_MANAGER";
     case "stock":
     case "warehouse":
       return hasRole(u, "WAREHOUSE_MANAGER") && o.status === "MANAGER_APPROVED";
     case "assign":
-      return hasRole(u, "LOGISTICS") && o.status === "WAREHOUSE_CONFIRMED";
+      return (
+        hasRole(u, "WAREHOUSE_MANAGER") && o.status === "WAREHOUSE_CONFIRMED"
+      );
     case "dispatch":
       return (
-        o.status === "WAREHOUSE_CONFIRMED" &&
-        (hasRole(u, "LOGISTICS") ||
-          (hasRole(u, "DRIVER") && o.assignment?.driverId === u.id))
+        hasRole(u, "WAREHOUSE_MANAGER") && o.status === "WAREHOUSE_CONFIRMED"
       );
     case "deliver":
     case "failed":
       return (
         o.status === "IN_TRANSIT" &&
-        (hasRole(u, "LOGISTICS") ||
+        (u.roles.includes("SUPER_ADMIN") ||
           (hasRole(u, "DRIVER") && o.assignment?.driverId === u.id))
       );
     case "cancel":
@@ -79,8 +87,8 @@ export function canActOnOrder(u: User, o: Order, a: Action) {
   }
 }
 export const needsAction = (u: User, o: Order) =>
-  ["review", "warehouse", "dispatch", "deliver"].some((a) =>
-    canActOnOrder(u, o, a as Action),
+  ["finance", "review", "warehouse", "assign", "dispatch", "deliver"].some(
+    (a) => canActOnOrder(u, o, a as Action),
   );
 export function shortages(o: Order, inventory: InventoryBalance[]) {
   return o.items
@@ -110,12 +118,12 @@ export const routeRoles: Record<string, Role[]> = {
   "/orders/new": ["SALES_REP"],
   "/approvals": ["SALES_MANAGER"],
   "/warehouse": ["WAREHOUSE_MANAGER"],
-  "/inventory": ["WAREHOUSE_MANAGER", "SALES_MANAGER", "SUPER_ADMIN"],
+  "/inventory": ["WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE"],
   "/logistics": ["LOGISTICS"],
   "/my-deliveries": ["DRIVER"],
   "/finance": ["FINANCE"],
-  "/customers": ["SUPER_ADMIN"],
-  "/products": ["SUPER_ADMIN"],
+  "/customers": ["FINANCE"],
+  "/products": ["FINANCE"],
   "/users": ["SUPER_ADMIN"],
   "/activity": ["SUPER_ADMIN"],
 };

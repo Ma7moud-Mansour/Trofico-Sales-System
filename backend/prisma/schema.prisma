@@ -14,6 +14,7 @@ model Warehouse {
   inventory_balances inventory_balances[]
   reservations       reservations[]
   stock_movements    stock_movements[]
+  stock_receipts     stock_receipts[]
 
   @@map("warehouses")
 }
@@ -147,6 +148,10 @@ model orders {
   delivery_address        String             @default("")
   requested_delivery_date DateTime?          @db.Date
   notes                   String?
+  finance_recommendation  String?
+  finance_note            String?
+  finance_reviewed_by     String?            @db.Uuid
+  finance_reviewed_at     DateTime?          @db.Timestamptz(6)
   fulfillment_issue       Json?
   version                 Int                @default(1)
   created_at              DateTime           @default(now()) @db.Timestamptz(6)
@@ -163,6 +168,7 @@ model orders {
   order_items             order_items[]
   users                   users              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   customers               customers?         @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  finance_reviewer        users?              @relation("orders_finance_reviewer", fields: [finance_reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reservations            reservations[]
   stock_movements         stock_movements[]
 
@@ -182,6 +188,29 @@ model products {
   order_items        order_items[]
   reservations       reservations[]
   stock_movements    stock_movements[]
+  stock_receipts     stock_receipts[]
+}
+
+model stock_receipts {
+  id                       String     @id @db.Uuid
+  warehouse_id             String     @db.Uuid
+  product_id               String     @db.Uuid
+  quantity                 Int
+  reason                   String
+  status                   String
+  created_by               String     @db.Uuid
+  created_by_name_snapshot String
+  created_at               DateTime   @default(now()) @db.Timestamptz(6)
+  reviewed_by              String?    @db.Uuid
+  reviewed_at              DateTime?  @db.Timestamptz(6)
+  finance_note             String?
+  version                  Int        @default(1)
+  warehouses               Warehouse  @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products                 products   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  creator                  users      @relation("stock_receipts_creator", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer                 users?     @relation("stock_receipts_reviewer", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status, created_at, id], map: "stock_receipts_queue")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -264,6 +293,9 @@ model users {
   order_assignments_order_assignments_assigned_byTousers order_assignments[]   @relation("order_assignments_assigned_byTousers")
   order_assignments_order_assignments_driver_idTousers   order_assignments[]   @relation("order_assignments_driver_idTousers")
   orders                                                 orders[]
+  finance_reviewed_orders                                orders[]              @relation("orders_finance_reviewer")
+  stock_receipts_created                                 stock_receipts[]      @relation("stock_receipts_creator")
+  stock_receipts_reviewed                                stock_receipts[]      @relation("stock_receipts_reviewer")
   sessions                                               sessions[]
   stock_movements                                        stock_movements[]
   user_roles                                             user_roles[]

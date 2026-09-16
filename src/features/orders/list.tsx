@@ -99,9 +99,9 @@ export function Dashboard() {
       color: "blue",
     },
     {
-      label: "بانتظار الاعتماد",
-      value: orders.filter((o) => o.status === "PENDING_APPROVAL").length,
-      query: "status=PENDING_APPROVAL",
+      label: "بانتظار الحسابات",
+      value: orders.filter((o) => o.status === "PENDING_FINANCE").length,
+      query: "status=PENDING_FINANCE",
       icon: Clock3,
       color: "amber",
     },
@@ -120,25 +120,33 @@ export function Dashboard() {
       color: "green",
     },
   ];
-  if (hasRole(user, "SALES_MANAGER"))
+  if (user.roles.includes("SALES_MANAGER"))
     cards = cards.map((c, i) =>
-      i === 2
+      i === 1
         ? {
             ...c,
-            label: "اعتماد جزئي",
-            value: orders.filter((o) => o.approvalOutcome === "PARTIAL").length,
-            query: "outcome=PARTIAL",
+            label: "بانتظار قراري",
+            value: orders.filter((o) => o.status === "PENDING_MANAGER").length,
+            query: "status=PENDING_MANAGER",
           }
-        : i === 3
+        : i === 2
           ? {
               ...c,
-              label: "مرفوض",
-              value: orders.filter((o) => o.status === "REJECTED").length,
-              query: "status=REJECTED",
+              label: "اعتماد جزئي",
+              value: orders.filter((o) => o.approvalOutcome === "PARTIAL")
+                .length,
+              query: "outcome=PARTIAL",
             }
-          : c,
+          : i === 3
+            ? {
+                ...c,
+                label: "مرفوض",
+                value: orders.filter((o) => o.status === "REJECTED").length,
+                query: "status=REJECTED",
+              }
+            : c,
     );
-  if (hasRole(user, "WAREHOUSE_MANAGER"))
+  if (user.roles.includes("WAREHOUSE_MANAGER"))
     cards = [
       {
         ...cards[0],
@@ -161,7 +169,7 @@ export function Dashboard() {
       },
       cards[3],
     ];
-  if (hasRole(user, "LOGISTICS"))
+  if (user.roles.includes("LOGISTICS"))
     cards = [
       {
         ...cards[0],
@@ -186,7 +194,7 @@ export function Dashboard() {
           .length,
       },
     ];
-  if (hasRole(user, "DRIVER")) {
+  if (user.roles.includes("DRIVER")) {
     const assigned = orders.filter((o) => o.assignment?.driverId === user.id);
     cards = [
       { ...cards[0], label: "مسند إليّ", value: assigned.length, query: "" },
@@ -230,7 +238,7 @@ export function Dashboard() {
           <Link
             key={c.label}
             className="stat"
-            href={`${hasRole(user, "DRIVER") ? "/my-deliveries" : "/orders"}?${c.query}`}
+            href={`${user.roles.includes("DRIVER") ? "/my-deliveries" : "/orders"}?${c.query}`}
           >
             <div className="stat-top">
               <span>{c.label}</span>
@@ -341,7 +349,8 @@ export function Dashboard() {
         <div className="stage-summary">
           {(
             [
-              "PENDING_APPROVAL",
+              "PENDING_FINANCE",
+              "PENDING_MANAGER",
               "MANAGER_APPROVED",
               "WAREHOUSE_CONFIRMED",
               "IN_TRANSIT",

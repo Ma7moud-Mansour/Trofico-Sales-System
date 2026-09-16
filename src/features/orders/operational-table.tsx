@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { MapPin, Package, Truck, Eye } from "lucide-react";
+import { MapPin, Package, Truck, ClipboardCheck } from "lucide-react";
 import { useApp } from "@/components/app-shell";
 import { Badge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -262,18 +262,23 @@ export function ScopeSummary({ path }: { path: string }) {
   const finance = path === "/finance";
   const cards = finance
     ? [
-        ["إجمالي الطلبات", orders.length, "blue", ""],
         [
-          "تم التسليم",
-          orders.filter((o) => o.status === "DELIVERED").length,
-          "green",
-          "status=DELIVERED",
+          "بانتظار توصية الحسابات",
+          orders.filter((o) => o.status === "PENDING_FINANCE").length,
+          "blue",
+          "status=PENDING_FINANCE",
         ],
         [
-          "قيد التنفيذ",
-          orders.filter((o) => o.status === "IN_TRANSIT").length,
+          "أوصت بالموافقة",
+          orders.filter((o) => o.financeRecommendation === "APPROVE").length,
+          "green",
+          "",
+        ],
+        [
+          "أوصت بعدم الموافقة",
+          orders.filter((o) => o.financeRecommendation === "REJECT").length,
           "amber",
-          "status=IN_TRANSIT",
+          "",
         ],
       ]
     : [
@@ -300,7 +305,8 @@ export function ScopeSummary({ path }: { path: string }) {
     <>
       {finance && (
         <p className="readonly-note">
-          <Eye size={15} /> عرض فقط — متابعة حالات وكميات الطلبات
+          <ClipboardCheck size={15} /> راجع الطلب وسجّل توصية الحسابات؛ القرار
+          النهائي للمدير التجاري
         </p>
       )}
       <div className="stats scope-stats">

@@ -45,12 +45,12 @@ import { LoginFields, PasswordForm } from "./auth-forms";
 const nav = [
   ["/dashboard", "نظرة عامة", LayoutDashboard],
   ["/orders", "الطلبات والمتابعة", ClipboardList],
+  ["/finance", "مراجعة الحسابات", ReceiptText],
   ["/approvals", "مراجعات الإدارة", ShieldCheck],
   ["/warehouse", "تجهيز المخزن", Warehouse],
   ["/inventory", "أرصدة المخزون", Boxes],
   ["/logistics", "الحركة والتوصيل", Truck],
   ["/my-deliveries", "توصيلاتي", Truck],
-  ["/finance", "متابعة الحسابات", ReceiptText],
   ["/customers", "العملاء", ContactRound],
   ["/products", "المنتجات", PackageCheck],
   ["/users", "المستخدمون", Users],
@@ -479,9 +479,9 @@ function Shell({ children }: { children: ReactNode }) {
         {[
           ["/dashboard", "الرئيسية", LayoutDashboard],
           [
-            hasRole(user, "DRIVER") ? "/my-deliveries" : "/orders",
-            hasRole(user, "DRIVER") ? "مهامي" : "طلباتي",
-            hasRole(user, "DRIVER") ? Truck : ClipboardList,
+            user.roles.includes("DRIVER") ? "/my-deliveries" : "/orders",
+            user.roles.includes("DRIVER") ? "مهامي" : "طلباتي",
+            user.roles.includes("DRIVER") ? Truck : ClipboardList,
           ],
           ["/profile", "حسابي", UserRound],
         ].map(([href, label, Icon]) => {

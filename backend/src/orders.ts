@@ -1,14 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Tx, type Row, one, rows, write, check, MAIN } from "./db.js";
 import { type Actor, requireRole } from "./auth.js";
-import {
-  getOrder,
-  event,
-  expected,
-  has,
-  balance,
-  movement,
-} from "./repository.js";
+import { getOrder, event, expected, balance, movement } from "./repository.js";
 import { draftSchema, commandSchemas } from "./schemas.js";
 export async function draft(
   tx: Tx,
@@ -22,7 +15,12 @@ export async function draft(
   let o: Row | undefined;
   if (id) {
     o = await getOrder(tx, id, u, true);
-    check(o.createdBy === u.id, 404, "NOT_FOUND", "الطلب غير موجود");
+    check(
+      o.createdBy === u.id || u.roles.includes("SUPER_ADMIN"),
+      404,
+      "NOT_FOUND",
+      "الطلب غير موجود",
+    );
     check(
       o.status === "DRAFT",
       409,
@@ -128,20 +126,21 @@ export function authorizeCommand(
 ) {
   const rules: Record<string, string[]> = {
     submit: ["SALES_REP"],
+    "finance-recommendation": ["FINANCE"],
     review: ["SALES_MANAGER"],
     "warehouse-confirmation": ["WAREHOUSE_MANAGER"],
     "warehouse-notes": ["WAREHOUSE_MANAGER"],
-    assignment: ["LOGISTICS"],
-    dispatch: ["LOGISTICS", "DRIVER"],
-    deliver: ["LOGISTICS", "DRIVER"],
-    "delivery-attempts": ["LOGISTICS", "DRIVER"],
+    assignment: ["WAREHOUSE_MANAGER"],
+    dispatch: ["WAREHOUSE_MANAGER"],
+    deliver: ["DRIVER"],
+    "delivery-attempts": ["DRIVER"],
     cancel: ["SALES_REP", "SALES_MANAGER", "SUPER_ADMIN"],
     delete: ["SALES_REP"],
   };
   requireRole(u, ...rules[type]);
   if (
-    ["dispatch", "deliver", "delivery-attempts"].includes(type) &&
-    !has(u, "LOGISTICS")
+    ["deliver", "delivery-attempts"].includes(type) &&
+    !u.roles.includes("SUPER_ADMIN")
   )
     check(
       (o.assignment as Row | undefined)?.driverId === u.id,
@@ -149,12 +148,19 @@ export function authorizeCommand(
       "FORBIDDEN",
       "الطلب غير مسند إليك",
     );
-  if (["submit", "delete"].includes(type))
+  if (["submit", "delete"].includes(type) && !u.roles.includes("SUPER_ADMIN"))
     check(o.createdBy === u.id, 404, "NOT_FOUND", "الطلب غير موجود");
-  if (type === "cancel" && !has(u, "SALES_MANAGER", "SUPER_ADMIN"))
+  if (
+    type === "cancel" &&
+    !u.roles.includes("SALES_MANAGER") &&
+    !u.roles.includes("SUPER_ADMIN")
+  )
     check(
       o.createdBy === u.id &&
-        (replay || ["DRAFT", "PENDING_APPROVAL"].includes(String(o.status))),
+        (replay ||
+          ["DRAFT", "PENDING_FINANCE", "PENDING_MANAGER"].includes(
+            String(o.status),
+          )),
       403,
       "FORBIDDEN",
       "لا يمكنك إلغاء الطلب بعد المراجعة",
@@ -174,7 +180,8 @@ export async function orderCommand(
   expected(o.version, p.expectedVersion);
   const stage: Record<string, string[]> = {
     submit: ["DRAFT"],
-    review: ["PENDING_APPROVAL"],
+    "finance-recommendation": ["PENDING_FINANCE"],
+    review: ["PENDING_MANAGER"],
     "warehouse-confirmation": ["MANAGER_APPROVED"],
     "warehouse-notes": ["MANAGER_APPROVED"],
     assignment: ["WAREHOUSE_CONFIRMED"],
@@ -183,7 +190,8 @@ export async function orderCommand(
     "delivery-attempts": ["IN_TRANSIT"],
     cancel: [
       "DRAFT",
-      "PENDING_APPROVAL",
+      "PENDING_FINANCE",
+      "PENDING_MANAGER",
       "MANAGER_APPROVED",
       "WAREHOUSE_CONFIRMED",
     ],
@@ -238,9 +246,24 @@ export async function orderCommand(
       `SO-${counter!.year}-${String(counter!.next_value).padStart(6, "0")}`,
       JSON.stringify(customerDto(customer)),
     );
-    status = "PENDING_APPROVAL";
+    status = "PENDING_FINANCE";
     eventType = "SUBMIT";
-    summary = "إرسال الطلب إلى الإدارات";
+    summary = "إرسال الطلب إلى الحسابات";
+  } else if (type === "finance-recommendation") {
+    await write(
+      tx,
+      `UPDATE orders SET finance_recommendation=$2,finance_note=$3,finance_reviewed_by=$4::uuid,finance_reviewed_at=now() WHERE id=$1::uuid`,
+      id,
+      p.recommendation,
+      p.note || null,
+      u.id,
+    );
+    status = "PENDING_MANAGER";
+    eventType = "FINANCE_RECOMMENDATION";
+    summary =
+      p.recommendation === "APPROVE"
+        ? "الحسابات توصي بالموافقة"
+        : "الحسابات توصي بعدم الموافقة";
   } else if (type === "review") {
     const decisions = p.decisions as {
       itemId: string;
@@ -255,6 +278,22 @@ export async function orderCommand(
       "VALIDATION_ERROR",
       "يجب مراجعة كل بند مرة واحدة",
     );
+    if (p.source === "FINANCE_RECOMMENDATION") {
+      check(
+        o.financeRecommendation,
+        409,
+        "INVALID_TRANSITION",
+        "لا توجد توصية حسابات قابلة للتنفيذ",
+      );
+      const recommended =
+        o.financeRecommendation === "APPROVE" ? "APPROVED" : "REJECTED";
+      check(
+        decisions.every((d) => d.status === recommended),
+        400,
+        "VALIDATION_ERROR",
+        "القرارات لا تطابق توصية الحسابات",
+      );
+    }
     for (const d of decisions) {
       check(
         d.status !== "REJECTED" || d.reason?.trim(),
@@ -279,7 +318,10 @@ export async function orderCommand(
       approved === items.length ? "FULL" : approved ? "PARTIAL" : "NONE",
     );
     eventType = "REVIEW";
-    summary = "إنهاء مراجعة أصناف الطلب";
+    summary =
+      p.source === "FINANCE_RECOMMENDATION"
+        ? "تنفيذ توصية الحسابات بقرار الإدارة"
+        : "إنهاء قرار الإدارة على أصناف الطلب";
   } else if (type === "warehouse-confirmation") {
     const approved = items
       .filter((i) => i.approvalStatus === "APPROVED")
@@ -336,7 +378,7 @@ export async function orderCommand(
     );
     status = "WAREHOUSE_CONFIRMED";
     eventType = "WAREHOUSE";
-    summary = "تأكيد الجاهزية وحجز الكميات";
+    summary = "تأكيد تجهيز الطلب وحجز الكميات";
   } else if (type === "warehouse-notes") {
     await write(
       tx,
@@ -423,7 +465,9 @@ export async function orderCommand(
     );
     eventType = type === "dispatch" ? "DISPATCH" : "CANCEL";
     summary =
-      type === "dispatch" ? "بدء التوصيل وصرف الكميات" : String(p.reason);
+      type === "dispatch"
+        ? "تسليم الطلب للسائق وصرف الكميات"
+        : String(p.reason);
   } else if (type === "deliver" || type === "delivery-attempts") {
     await write(
       tx,
@@ -477,18 +521,20 @@ export async function orderCommand(
     status,
   );
   const changes =
-    type === "review"
-      ? (p.decisions as { itemId: string; status: string; reason?: string }[])
-          .map((d) => {
-            const item = items.find((i) => i.id === d.itemId)!;
-            return `${(item.productSnapshot as Row).name}: ${d.status === "APPROVED" ? "اعتماد" : "رفض"} ${item.requestedQuantity}${d.reason ? " — " + d.reason : ""}`;
-          })
-          .join("\n")
-      : type === "assignment"
-        ? `تعيين السائق: ${(await getOrder(tx, id, u)).assignment ? ((await getOrder(tx, id, u)).assignment as Row).driverNameSnapshot : ""}`
-        : p.note
-          ? String(p.note)
-          : undefined;
+    type === "finance-recommendation"
+      ? `${p.recommendation === "APPROVE" ? "توصية بالموافقة" : "توصية بعدم الموافقة"}${p.note ? " — " + p.note : ""}`
+      : type === "review"
+        ? (p.decisions as { itemId: string; status: string; reason?: string }[])
+            .map((d) => {
+              const item = items.find((i) => i.id === d.itemId)!;
+              return `${(item.productSnapshot as Row).name}: ${d.status === "APPROVED" ? "اعتماد" : "رفض"} ${item.requestedQuantity}${d.reason ? " — " + d.reason : ""}`;
+            })
+            .join("\n")
+        : type === "assignment"
+          ? `تعيين السائق: ${(await getOrder(tx, id, u)).assignment ? ((await getOrder(tx, id, u)).assignment as Row).driverNameSnapshot : ""}`
+          : p.note
+            ? String(p.note)
+            : undefined;
   await event(tx, u, eventType, summary, requestId, id, changes);
   return getOrder(tx, id, u);
 }

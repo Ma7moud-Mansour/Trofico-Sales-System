@@ -9,7 +9,8 @@ export function filterOrders(
 ) {
   const search = f.search?.trim().toLocaleLowerCase();
   const items = orders.filter((o) => {
-    if (f.scope === "/approvals" && o.status !== "PENDING_APPROVAL")
+    if (f.scope === "/finance" && o.status !== "PENDING_FINANCE") return false;
+    if (f.scope === "/approvals" && o.status !== "PENDING_MANAGER")
       return false;
     if (
       f.scope === "/warehouse" &&

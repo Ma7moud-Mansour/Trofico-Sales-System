@@ -43,9 +43,19 @@ test("Full cross-role partial approval, reservation, failed attempt, delivery, f
   await page.getByRole("button", { name: "تأكيد الإرسال" }).click();
   await expect(page).toHaveURL(/orders\/[a-f0-9-]{36}$/);
   await expect(
-    page.getByText("بانتظار اعتماد الإدارة", { exact: true }).first(),
+    page.getByText("بانتظار توصية الحسابات", { exact: true }).first(),
   ).toBeVisible();
   const url = page.url();
+  await switchUser(page, "u5");
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: "أوصي بالموافقة", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByLabel(/ملاحظة الحسابات/)
+    .fill("سليم");
+  await confirm(page);
   await switchUser(page, "u3");
   await page.goto(url);
   await page.getByRole("radio", { name: "اعتماد الصنف" }).first().check();
@@ -67,18 +77,20 @@ test("Full cross-role partial approval, reservation, failed attempt, delivery, f
   await expect(
     page.getByText("جاهز للصرف", { exact: true }).first(),
   ).toBeVisible();
-  await switchUser(page, "u6");
-  await page.goto(url);
   await page.getByRole("button", { name: "تعيين سائق", exact: true }).click();
   await page
     .getByRole("combobox", { name: "السائق", exact: true })
     .selectOption("u7");
   await confirm(page);
-  await page.getByRole("button", { name: "بدء التوصيل", exact: true }).click();
+  await page
+    .getByRole("button", { name: "تسليم الطلب للسائق", exact: true })
+    .click();
   await confirm(page);
   await expect(
     page.getByText("قيد التوصيل", { exact: true }).first(),
   ).toBeVisible();
+  await switchUser(page, "u7");
+  await page.goto(url);
   await page.getByRole("button", { name: "تعذر التسليم", exact: true }).click();
   await confirm(page);
   await expect(
@@ -141,12 +153,12 @@ test("Draft survives reload, filters persist through back, forbidden route, keyb
   await expect(page).toHaveURL(/orders\/[a-f0-9-]{36}$/);
   await page.reload();
   await expect(page.getByText("مسودة اختبار")).toBeVisible();
-  await page.goto("/orders?status=PENDING_APPROVAL");
+  await page.goto("/orders?status=PENDING_FINANCE");
   const href = await page.locator(".order-row").first().getAttribute("href");
   await page.locator(".order-row").first().click();
   await expect(page).toHaveURL(new RegExp(href!));
   await page.getByRole("link", { name: "العودة إلى القائمة" }).click();
-  await expect(page).toHaveURL(/status=PENDING_APPROVAL/);
+  await expect(page).toHaveURL(/status=PENDING_FINANCE/);
   await page.goto("/users");
   await expect(page.getByText("ليس لديك صلاحية لهذه الصفحة")).toBeVisible();
   await page.getByRole("button", { name: "أدوات العرض التجريبي" }).focus();

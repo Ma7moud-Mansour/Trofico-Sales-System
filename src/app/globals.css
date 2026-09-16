@@ -302,9 +302,13 @@ summary {
   background: #edf0f4;
   color: #526074;
 }
-.status-PENDING_APPROVAL {
+.status-PENDING_FINANCE {
   background: #fff4df;
   color: #98600b;
+}
+.status-PENDING_MANAGER {
+  background: #eaf1ff;
+  color: #2457c5;
 }
 .status-MANAGER_APPROVED {
   background: #eaf1ff;
@@ -1021,7 +1025,7 @@ summary {
 }
 .stepper {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
 }
 .step {
   position: relative;
@@ -2018,7 +2022,7 @@ summary {
   }
   .stepper {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
   }
   .badge {
     border: 1px solid #ccc;

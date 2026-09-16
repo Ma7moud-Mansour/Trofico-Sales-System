@@ -5,6 +5,7 @@ import {
   type MutationMeta,
   type SaveDraftInput,
   type ReviewInput,
+  type FinanceRecommendationInput,
   type AssignmentInput,
   type DeliveryInput,
   type FailedAttemptInput,
@@ -15,6 +16,7 @@ import { normalizeDigits, orderSchema } from "@/features/orders/schemas";
 export type Command =
   | { type: "saveDraft"; input: SaveDraftInput }
   | { type: "submit"; id: string }
+  | { type: "recommendFinance"; id: string; input: FinanceRecommendationInput }
   | { type: "finalizeReview"; id: string; input: ReviewInput }
   | { type: "confirmWarehouse"; id: string }
   | { type: "assignDriver"; id: string; input: AssignmentInput }
@@ -152,9 +154,34 @@ export function executeCommand(
             ),
           "العميل أو أحد الأصناف غير نشط",
         );
-        o.status = "PENDING_APPROVAL";
+        o.status = "PENDING_FINANCE";
         o.submittedAt = now;
-        event("SUBMIT", "تم إرسال الطلب وأصبح متاحًا للإدارات");
+        event("SUBMIT", "تم إرسال الطلب إلى الحسابات");
+        break;
+      }
+      case "recommendFinance": {
+        assert(
+          canActOnOrder(actor, o, "finance"),
+          "لا يمكنك تسجيل توصية الحسابات لهذا الطلب",
+          "FORBIDDEN",
+        );
+        assert(
+          command.input.recommendation !== "REJECT" ||
+            command.input.note.trim(),
+          "سبب توصية الرفض مطلوب",
+        );
+        o.financeRecommendation = command.input.recommendation;
+        o.financeNote = command.input.note.trim() || undefined;
+        o.financeReviewedBy = actor.id;
+        o.financeReviewedAt = now;
+        o.status = "PENDING_MANAGER";
+        event(
+          "FINANCE_RECOMMENDATION",
+          command.input.recommendation === "APPROVE"
+            ? "الحسابات توصي بالموافقة"
+            : "الحسابات توصي بعدم الموافقة",
+          command.input.note,
+        );
         break;
       }
       case "finalizeReview": {

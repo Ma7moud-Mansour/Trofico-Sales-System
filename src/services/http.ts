@@ -168,6 +168,7 @@ export const httpServices: Omit<Services, "session"> = {
       );
     },
     submit: (id, m) => command(id, "submit", {}, m),
+    recommendFinance: (id, p, m) => command(id, "finance-recommendation", p, m),
     finalizeReview: (id, p, m) => command(id, "review", p, m),
     confirmWarehouse: (id, m) => command(id, "warehouse-confirmation", {}, m),
     assignDriver: (id, p, m) => command(id, "assignment", p, m),

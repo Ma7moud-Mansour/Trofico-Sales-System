@@ -55,6 +55,10 @@ function read(): Database {
         "إصدار بيانات التجربة غير متوافق. استخدم إعادة الضبط.",
         "STORAGE_ERROR",
       );
+      parsed.stockReceipts ??= [];
+      for (const order of parsed.orders ?? [])
+        if (order.status === "PENDING_APPROVAL")
+          order.status = "PENDING_FINANCE";
       return parsed;
     }
     const db = createSeed();
@@ -122,18 +126,21 @@ function view(db: Database, u: User): ViewData {
     user: u,
     orders,
     users: db.users,
-    customers: hasRole(u, "SALES_REP", "SUPER_ADMIN") ? db.customers : [],
+    customers: hasRole(u, "SALES_REP", "FINANCE") ? db.customers : [],
     products: hasRole(
       u,
       "SALES_REP",
-      "SUPER_ADMIN",
+      "FINANCE",
       "SALES_MANAGER",
       "WAREHOUSE_MANAGER",
     )
       ? db.products
       : [],
-    inventory: hasRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "SUPER_ADMIN")
+    inventory: hasRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE")
       ? db.inventory
+      : [],
+    stockReceipts: hasRole(u, "WAREHOUSE_MANAGER", "FINANCE")
+      ? db.stockReceipts
       : [],
     reservations: db.reservations.filter((r) => ids.has(r.orderId)),
     attempts: db.attempts.filter((a) => ids.has(a.orderId)),
@@ -150,8 +157,10 @@ async function getView() {
 async function saveMaster(kind: MasterKind, input: MasterRecord) {
   return transaction((db, u) => {
     assert(
-      hasRole(u, "SUPER_ADMIN"),
-      "هذه العملية متاحة للإدارة العليا فقط",
+      kind === "users" ? hasRole(u, "SUPER_ADMIN") : hasRole(u, "FINANCE"),
+      kind === "users"
+        ? "هذه العملية متاحة للإدارة العليا فقط"
+        : "هذه العملية متاحة للحسابات فقط",
       "FORBIDDEN",
     );
     assert(input.name.trim(), "الاسم مطلوب");
@@ -269,6 +278,8 @@ export const services: Services = {
     },
     saveDraft: (input, meta) => run({ type: "saveDraft", input }, meta),
     submit: (id, meta) => run({ type: "submit", id }, meta),
+    recommendFinance: (id, input, meta) =>
+      run({ type: "recommendFinance", id, input }, meta),
     finalizeReview: (id, input, meta) =>
       run({ type: "finalizeReview", id, input }, meta),
     confirmWarehouse: (id, meta) => run({ type: "confirmWarehouse", id }, meta),

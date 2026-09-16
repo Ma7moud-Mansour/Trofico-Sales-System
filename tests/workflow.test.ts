@@ -6,10 +6,10 @@ import { filterOrders } from "../src/domain/selectors";
 import { quantitySchema } from "../src/features/orders/schemas";
 import type { Database, Order, User } from "../src/domain/types";
 let db: Database;
-let rep: User, manager: User, warehouse: User, logistics: User;
+let rep: User, manager: User, warehouse: User, finance: User;
 beforeEach(() => {
   db = createSeed("2026-09-10T10:00:00.000Z");
-  [rep, , manager, warehouse, , logistics] = db.users;
+  [rep, , manager, warehouse, finance] = db.users;
 });
 const meta = (o?: Order) => ({
   expectedVersion: o?.version ?? 0,
@@ -36,8 +36,23 @@ function pending() {
   const o = draft();
   return cmd(rep, { type: "submit", id: o.id }, o);
 }
-function approved(partial = false) {
+function managerPending(recommendation: "APPROVE" | "REJECT" = "APPROVE") {
   const o = pending();
+  return cmd(
+    finance,
+    {
+      type: "recommendFinance",
+      id: o.id,
+      input: {
+        recommendation,
+        note: recommendation === "REJECT" ? "مديونية قائمة" : "موقف سليم",
+      },
+    },
+    o,
+  );
+}
+function approved(partial = false) {
+  const o = managerPending();
   return cmd(
     manager,
     {
@@ -61,7 +76,7 @@ function ready() {
 function assigned() {
   const o = ready();
   return cmd(
-    logistics,
+    warehouse,
     { type: "assignDriver", id: o.id, input: { driverId: "u7" } },
     o,
   );
@@ -78,7 +93,7 @@ describe("Workflow and permissions", () => {
     expect(canViewOrder(manager, o)).toBe(false);
     expect(canViewOrder(rep, o)).toBe(true);
     cmd(rep, { type: "submit", id: o.id }, o);
-    expect(o.status).toBe("PENDING_APPROVAL");
+    expect(o.status).toBe("PENDING_FINANCE");
     for (const u of db.users.slice(2)) expect(canViewOrder(u, o)).toBe(true);
     expect(canViewOrder(db.users[1], o)).toBe(false);
   });
@@ -97,7 +112,7 @@ describe("Workflow and permissions", () => {
     expect(o.items[1].rejectionReason).toBe("لا يتوفر");
   });
   it("AC05: reject all prevents warehouse actions", () => {
-    const o = pending();
+    const o = managerPending("REJECT");
     cmd(
       manager,
       {
@@ -117,7 +132,7 @@ describe("Workflow and permissions", () => {
     expect(canActOnOrder(warehouse, o, "warehouse")).toBe(false);
   });
   it("AC06: incomplete review rejected", () => {
-    const o = pending();
+    const o = managerPending();
     expect(() =>
       cmd(
         manager,
@@ -126,11 +141,21 @@ describe("Workflow and permissions", () => {
       ),
     ).toThrow("جميع");
   });
-  it("AC07: finance cannot approve even via command", () => {
+  it("AC07: finance recommendation is advisory and cannot approve the order", () => {
     const o = pending();
+    const recommended = cmd(
+      finance,
+      {
+        type: "recommendFinance",
+        id: o.id,
+        input: { recommendation: "APPROVE", note: "موقف سليم" },
+      },
+      o,
+    );
+    expect(recommended.status).toBe("PENDING_MANAGER");
     expect(() =>
       cmd(
-        db.users[4],
+        finance,
         {
           type: "finalizeReview",
           id: o.id,
@@ -141,7 +166,7 @@ describe("Workflow and permissions", () => {
             })),
           },
         },
-        o,
+        recommended,
       ),
     ).toThrow("لا يمكنك");
   });
@@ -159,14 +184,14 @@ describe("Workflow and permissions", () => {
     const before = structuredClone(db.inventory);
     const o = assigned();
     const key = meta(o);
-    executeCommand(db, logistics, { type: "dispatch", id: o.id }, key);
+    executeCommand(db, warehouse, { type: "dispatch", id: o.id }, key);
     const after = structuredClone(db.inventory);
     const eventCount = db.activity.length;
-    executeCommand(db, logistics, { type: "dispatch", id: o.id }, key);
+    executeCommand(db, warehouse, { type: "dispatch", id: o.id }, key);
     expect(db.inventory).toEqual(after);
     expect(db.activity.length).toBe(eventCount);
     cmd(
-      logistics,
+      db.users[6],
       { type: "deliver", id: o.id, input: { recipientName: "مستلم" } },
       o,
     );
@@ -192,29 +217,36 @@ describe("Workflow and permissions", () => {
   });
   it("AC11: dispatch requires driver", () => {
     const o = ready();
-    expect(() => cmd(logistics, { type: "dispatch", id: o.id }, o)).toThrow(
+    expect(() => cmd(warehouse, { type: "dispatch", id: o.id }, o)).toThrow(
       "سائق",
     );
   });
-  it("AC12: driver cannot execute another assignment", () => {
+  it("AC12: only warehouse hands over and only assigned driver delivers", () => {
     const o = assigned();
     expect(() => cmd(db.users[7], { type: "dispatch", id: o.id }, o)).toThrow(
       "لا يمكنك",
     );
-    cmd(db.users[6], { type: "dispatch", id: o.id }, o);
+    cmd(warehouse, { type: "dispatch", id: o.id }, o);
     expect(o.status).toBe("IN_TRANSIT");
+    expect(() =>
+      cmd(
+        db.users[7],
+        { type: "deliver", id: o.id, input: { recipientName: "مستلم" } },
+        o,
+      ),
+    ).toThrow("لا يمكنك");
   });
   it("AC13: failed then successful delivery keeps both attempts and clears exception", () => {
     const o = assigned();
-    cmd(logistics, { type: "dispatch", id: o.id }, o);
+    cmd(warehouse, { type: "dispatch", id: o.id }, o);
     cmd(
-      logistics,
+      db.users[6],
       { type: "reportFailedAttempt", id: o.id, input: { reason: "غير متاح" } },
       o,
     );
     expect(o.status).toBe("IN_TRANSIT");
     cmd(
-      logistics,
+      db.users[6],
       { type: "deliver", id: o.id, input: { recipientName: "أحمد" } },
       o,
     );
@@ -233,7 +265,7 @@ describe("Workflow and permissions", () => {
     expect(db.orders.length).toBe(count);
   });
   it("AC15: stale version leaves data intact", () => {
-    const o = pending();
+    const o = managerPending();
     const before = structuredClone(db);
     expect(() =>
       executeCommand(
@@ -248,13 +280,13 @@ describe("Workflow and permissions", () => {
   it("AC16/24: composed filters and totals are derived from same orders", () => {
     const result = filterOrders(
       db.orders,
-      { status: "PENDING_APPROVAL", rep: "u1", search: "SO" },
+      { status: "PENDING_FINANCE", rep: "u1", search: "SO" },
       manager,
     );
     expect(result.length).toBeGreaterThan(0);
     expect(
       result.every(
-        (o) => o.status === "PENDING_APPROVAL" && o.createdBy === "u1",
+        (o) => o.status === "PENDING_FINANCE" && o.createdBy === "u1",
       ),
     ).toBe(true);
   });
@@ -275,9 +307,9 @@ describe("Workflow and permissions", () => {
     for (const q of ["0", "-1", "1.5", "abc", "١٫٥"])
       expect(quantitySchema.safeParse(q).success).toBe(false);
   });
-  it("Super admin cannot skip approval and rep cannot cancel after final review", () => {
+  it("CEO has all action permissions while workflow stages remain ordered", () => {
     const o = approved();
-    expect(canActOnOrder(db.users[8], o, "warehouse")).toBe(false);
+    expect(canActOnOrder(db.users[8], o, "warehouse")).toBe(true);
     expect(canActOnOrder(rep, o, "cancel")).toBe(false);
   });
 });

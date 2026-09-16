@@ -9,6 +9,7 @@ import {
   productSchema,
   userSchema,
   stockSchema,
+  stockReceiptReviewSchema,
   version,
 } from "./schemas.js";
 const paths: Record<string, unknown> = {};
@@ -76,6 +77,7 @@ for (const p of [
   "lookups/drivers",
   "inventory/balances",
   "inventory/movements",
+  "inventory/receipts",
   "dashboard",
   "activity",
   "health/live",
@@ -105,9 +107,11 @@ add(
 );
 for (const k of ["openings", "receipts", "adjustments"])
   add("inventory/" + k, "post", stockSchema);
+for (const decision of ["approve", "reject"])
+  add(`inventory/receipts/{id}/${decision}`, "post", stockReceiptReviewSchema);
 export const openApi = {
   openapi: "3.0.3",
-  info: { title: "Trofico Sales API", version: "1.0.0" },
+  info: { title: "Trofico Sales API", version: "2.0.0" },
   paths,
   components: {
     securitySchemes: {

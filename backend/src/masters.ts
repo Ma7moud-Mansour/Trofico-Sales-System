@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes } from "node:crypto";
-import { type Tx, rows, one, write, check } from "./db.js";
+import { type Tx, rows, one, write, check, MAIN } from "./db.js";
 import {
   type Actor,
   requireRole,
@@ -13,6 +13,7 @@ import {
   productSchema,
   userSchema,
   stockSchema,
+  stockReceiptReviewSchema,
 } from "./schemas.js";
 import { customerDto, productDto } from "./orders.js";
 export async function master(
@@ -23,7 +24,7 @@ export async function master(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(u, "SUPER_ADMIN");
+  requireRole(u, ...(kind === "users" ? ["SUPER_ADMIN"] : ["FINANCE"]));
   const p = (
     kind === "users"
       ? userSchema
@@ -195,7 +196,10 @@ export async function stock(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(u, "WAREHOUSE_MANAGER", "SUPER_ADMIN");
+  requireRole(
+    u,
+    ...(type === "receipts" ? ["WAREHOUSE_MANAGER"] : ["SUPER_ADMIN"]),
+  );
   const p = stockSchema.parse(input);
   const product = await one(
     tx,
@@ -205,6 +209,38 @@ export async function stock(
   check(product, 404, "NOT_FOUND", "الصنف غير موجود");
   const b = await balance(tx, p.productId);
   expected(b.version, p.expectedVersion);
+  if (type === "receipts") {
+    check(
+      p.quantity !== undefined && p.countedOnHand === undefined,
+      400,
+      "VALIDATION_ERROR",
+      "أدخل كمية الوارد",
+    );
+    const id = randomUUID();
+    await write(
+      tx,
+      `INSERT INTO stock_receipts(id,warehouse_id,product_id,quantity,reason,status,created_by,created_by_name_snapshot) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,'PENDING_FINANCE',$6::uuid,$7)`,
+      id,
+      MAIN,
+      p.productId,
+      p.quantity,
+      p.reason,
+      u.id,
+      u.name,
+    );
+    await event(
+      tx,
+      u,
+      "STOCK_RECEIPT_REQUEST",
+      "تسجيل وارد بانتظار موافقة الحسابات",
+      requestId,
+      undefined,
+      JSON.stringify({ id, ...p }),
+    );
+    return camel(
+      (await one(tx, "SELECT * FROM stock_receipts WHERE id=$1::uuid", id))!,
+    );
+  }
   if (type === "openings") {
     const prior = await one(
       tx,
@@ -225,11 +261,7 @@ export async function stock(
     tx,
     u,
     b,
-    type === "openings"
-      ? "OPENING"
-      : type === "receipts"
-        ? "RECEIPT"
-        : "ADJUSTMENT",
+    type === "openings" ? "OPENING" : "ADJUSTMENT",
     type === "adjustments" ? p.countedOnHand! - Number(b.on_hand) : p.quantity!,
     0,
     p.reason,
@@ -245,6 +277,71 @@ export async function stock(
     JSON.stringify({ type, ...p }),
   );
   return camel(await balance(tx, p.productId));
+}
+export async function reviewStockReceipt(
+  tx: Tx,
+  u: Actor,
+  id: string,
+  decision: "approve" | "reject",
+  input: unknown,
+  requestId: string,
+) {
+  requireRole(u, "FINANCE");
+  const p = stockReceiptReviewSchema.parse(input);
+  const receipt = await one(
+    tx,
+    "SELECT * FROM stock_receipts WHERE id=$1::uuid FOR UPDATE",
+    id,
+  );
+  check(receipt, 404, "NOT_FOUND", "طلب الوارد غير موجود");
+  expected(receipt.version, p.expectedVersion);
+  check(
+    receipt.status === "PENDING_FINANCE",
+    409,
+    "INVALID_TRANSITION",
+    "تمت مراجعة طلب الوارد بالفعل",
+  );
+  check(
+    decision !== "reject" || p.note.length > 0,
+    400,
+    "VALIDATION_ERROR",
+    "سبب رفض الوارد مطلوب",
+  );
+  if (decision === "approve") {
+    const b = await balance(tx, String(receipt.product_id));
+    await movement(
+      tx,
+      u,
+      b,
+      "RECEIPT",
+      Number(receipt.quantity),
+      0,
+      String(receipt.reason),
+      id,
+    );
+  }
+  await write(
+    tx,
+    `UPDATE stock_receipts SET status=$2,reviewed_by=$3::uuid,reviewed_at=now(),finance_note=$4,version=version+1 WHERE id=$1::uuid`,
+    id,
+    decision === "approve" ? "APPROVED" : "REJECTED",
+    u.id,
+    p.note || null,
+  );
+  await event(
+    tx,
+    u,
+    decision === "approve"
+      ? "STOCK_RECEIPT_APPROVED"
+      : "STOCK_RECEIPT_REJECTED",
+    decision === "approve" ? "اعتماد الوارد وإضافته للمخزون" : "رفض طلب الوارد",
+    requestId,
+    undefined,
+    JSON.stringify({ receiptId: id, note: p.note }),
+  );
+  return camel(
+    (await one(tx, "SELECT * FROM stock_receipts WHERE id=$1::uuid", id))!,
+  );
 }
 export async function reconcile(tx: Tx) {
   return rows(

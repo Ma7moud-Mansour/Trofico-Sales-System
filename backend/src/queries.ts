@@ -16,7 +16,7 @@ export async function workspace(tx: Tx, u: Actor) {
           getActor(tx, String(r.id)),
         ),
       )
-    : has(u, "LOGISTICS")
+    : has(u, "WAREHOUSE_MANAGER")
       ? await rows(
           tx,
           `SELECT u.id,u.name,u.username,u.active,u.version,ARRAY['DRIVER']::text[] AS roles FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER')`,
@@ -26,11 +26,11 @@ export async function workspace(tx: Tx, u: Actor) {
     user: u,
     users,
     orders: await Promise.all(orders.map((o) => orderDto(tx, o))),
-    customers: has(u, "SALES_REP", "SUPER_ADMIN")
+    customers: has(u, "SALES_REP", "FINANCE")
       ? (
           await rows(
             tx,
-            `SELECT * FROM customers ${has(u, "SUPER_ADMIN") ? "" : "WHERE active"} ORDER BY name`,
+            `SELECT * FROM customers ${u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE") ? "" : "WHERE active"} ORDER BY name`,
           )
         ).map(customerDto)
       : [],
@@ -38,16 +38,25 @@ export async function workspace(tx: Tx, u: Actor) {
       u,
       "SALES_REP",
       "SUPER_ADMIN",
+      "FINANCE",
       "WAREHOUSE_MANAGER",
       "SALES_MANAGER",
     )
       ? (await rows(tx, "SELECT * FROM products ORDER BY name")).map(productDto)
       : [],
-    inventory: has(u, "SUPER_ADMIN", "SALES_MANAGER", "WAREHOUSE_MANAGER")
+    inventory: has(u, "SALES_MANAGER", "WAREHOUSE_MANAGER", "FINANCE")
       ? (
           await rows(
             tx,
             "SELECT product_id,on_hand,reserved,version FROM inventory_balances",
+          )
+        ).map(camel)
+      : [],
+    stockReceipts: has(u, "WAREHOUSE_MANAGER", "FINANCE")
+      ? (
+          await rows(
+            tx,
+            `SELECT r.*,p.name AS product_name,p.sku AS product_sku FROM stock_receipts r JOIN products p ON p.id=r.product_id ORDER BY r.created_at DESC,r.id`,
           )
         ).map(camel)
       : [],
@@ -88,7 +97,8 @@ export async function readEndpoint(
       counts: Object.fromEntries(
         [
           "DRAFT",
-          "PENDING_APPROVAL",
+          "PENDING_FINANCE",
+          "PENDING_MANAGER",
           "MANAGER_APPROVED",
           "WAREHOUSE_CONFIRMED",
           "IN_TRANSIT",
@@ -102,12 +112,12 @@ export async function readEndpoint(
     };
   }
   if (["users", "customers", "products"].includes(path)) {
-    requireRole(u, "SUPER_ADMIN");
+    requireRole(u, ...(path === "users" ? ["SUPER_ADMIN"] : ["FINANCE"]));
     const data = await workspace(tx, u);
     return data[path as "users" | "customers" | "products"];
   }
   if (path === "lookups/customers" || path === "lookups/products") {
-    requireRole(u, "SALES_REP", "SUPER_ADMIN");
+    requireRole(u, "SALES_REP", "FINANCE");
     return (
       await rows(
         tx,
@@ -116,14 +126,14 @@ export async function readEndpoint(
     ).map((r) => (path.endsWith("customers") ? customerDto(r) : productDto(r)));
   }
   if (path === "lookups/drivers") {
-    requireRole(u, "LOGISTICS");
+    requireRole(u, "WAREHOUSE_MANAGER");
     return rows(
       tx,
       `SELECT u.id,u.name,u.active,ARRAY['DRIVER']::text[] roles FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER') ORDER BY u.name,u.id`,
     );
   }
   if (path === "inventory/balances") {
-    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "SUPER_ADMIN");
+    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE");
     return (
       await rows(
         tx,
@@ -132,11 +142,20 @@ export async function readEndpoint(
     ).map(camel);
   }
   if (path === "inventory/movements") {
-    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "SUPER_ADMIN");
+    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE");
     return (
       await rows(
         tx,
         "SELECT * FROM stock_movements ORDER BY occurred_at DESC,id",
+      )
+    ).map(camel);
+  }
+  if (path === "inventory/receipts") {
+    requireRole(u, "WAREHOUSE_MANAGER", "FINANCE");
+    return (
+      await rows(
+        tx,
+        `SELECT r.*,p.name AS product_name,p.sku AS product_sku FROM stock_receipts r JOIN products p ON p.id=r.product_id ORDER BY r.created_at DESC,r.id`,
       )
     ).map(camel);
   }

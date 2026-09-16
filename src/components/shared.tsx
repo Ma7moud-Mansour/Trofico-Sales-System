@@ -84,9 +84,10 @@ export function Stepper({
 }) {
   const steps = [
     ["SUBMIT", "إرسال الطلب", Send],
+    ["FINANCE_RECOMMENDATION", "توصية الحسابات", Clock3],
     ["REVIEW", "اعتماد الإدارة", ShieldCheck],
     ["WAREHOUSE", "تأكيد المخزن", Package],
-    ["DISPATCH", "الخروج للتوصيل", Truck],
+    ["DISPATCH", "التسليم للسائق", Truck],
     ["DELIVER", "التسليم", Check],
   ] as const;
   const terminal = ["REJECTED", "CANCELLED"].includes(order.status);

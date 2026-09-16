@@ -42,7 +42,7 @@ describe("Mock transaction and admin invariants", () => {
   it("AC20: persistence failure rolls back stock, events, order and receipts", async () => {
     services.session.login("u4");
     const before = localStorage.getItem("trofico-sales-v1");
-    const o = database().orders.find((o) => o.id === "o2")!;
+    const o = database().orders.find((o) => o.id === "o3")!;
     demo.failNext("storage");
     await expect(
       services.orders.confirmWarehouse(o.id, {
@@ -62,7 +62,9 @@ describe("Mock transaction and admin invariants", () => {
   it("review validation failure cannot persist partially changed decisions", async () => {
     services.session.login("u3");
     const before = localStorage.getItem("trofico-sales-v1");
-    const o = database().orders[0];
+    const o = database().orders.find(
+      (order) => order.status === "PENDING_MANAGER",
+    )!;
     await expect(
       services.orders.finalizeReview(
         o.id,
@@ -108,7 +110,7 @@ describe("Mock transaction and admin invariants", () => {
     await expect(
       services.customers.save({ ...customer, id: "", name: "نسخة" }),
     ).rejects.toThrow("مستخدم بالفعل");
-    services.session.login("u5");
+    services.session.login("u1");
     await expect(
       services.customers.save({ ...customer, name: "تغيير" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -125,7 +127,7 @@ describe("Mock transaction and admin invariants", () => {
     const finance = await services.dashboard.get();
     expect(finance.orders.every((o) => o.status !== "DRAFT")).toBe(true);
     expect(finance.orders).toHaveLength(22);
-    expect(finance.inventory).toEqual([]);
+    expect(finance.inventory.length).toBeGreaterThan(0);
   });
   it("offline and simulated network errors cannot write", async () => {
     services.session.login("u1");

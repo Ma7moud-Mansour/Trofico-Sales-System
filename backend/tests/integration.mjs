@@ -172,7 +172,7 @@ test("Database runtime privileges, UTC timestamps, private audit and deleted-dra
   const audit = await clients.SUPER_ADMIN.ok("activity");
   assert.equal(
     audit.some((e) => e.orderId === d.id),
-    false,
+    true,
   );
   const key = randomUUID();
   const first = await clients.SALES_REP.ok(
@@ -193,6 +193,7 @@ test("Database runtime privileges, UTC timestamps, private audit and deleted-dra
 });
 const rep = () => clients.SALES_REP,
   mgr = () => clients.SALES_MANAGER,
+  fin = () => clients.FINANCE,
   wh = () => clients.WAREHOUSE_MANAGER,
   log = () => clients.LOGISTICS,
   admin = () => clients.SUPER_ADMIN;
@@ -207,6 +208,11 @@ async function make(qty = 2, product = products[0], extra = []) {
   });
 }
 async function approve(o, partial = false) {
+  o = await fin().ok(`orders/${o.id}/finance-recommendation`, "POST", {
+    expectedVersion: o.version,
+    recommendation: "APPROVE",
+    note: "الموقف المالي يسمح بالتنفيذ",
+  });
   return mgr().ok(`orders/${o.id}/review`, "POST", {
     expectedVersion: o.version,
     decisions: o.items.map((i, n) => ({
@@ -217,7 +223,7 @@ async function approve(o, partial = false) {
   });
 }
 async function assign(o) {
-  return log().ok(`orders/${o.id}/assignment`, "POST", {
+  return wh().ok(`orders/${o.id}/assignment`, "POST", {
     expectedVersion: o.version,
     driverId: clients.DRIVER.account.id,
   });
@@ -242,8 +248,9 @@ test("B04 B05 scope on drafts, submitted orders, counts and every department", a
     deliveryAddress: "",
     items: [],
   });
-  for (const role of ["REP2", "SUPER_ADMIN", "FINANCE", "DRIVER"])
+  for (const role of ["REP2", "FINANCE", "DRIVER"])
     assert.equal((await clients[role].call("orders/" + d.id)).status, 404);
+  assert.equal((await clients.SUPER_ADMIN.call("orders/" + d.id)).status, 200);
   const o = await make();
   assert.equal((await clients.REP2.call("orders/" + o.id)).status, 404);
   assert.equal(
@@ -276,6 +283,11 @@ test("B06 B07 B08 B14 atomic decisions, transition and stale version", async () 
     ).error.code,
     "INVALID_TRANSITION",
   );
+  o = await fin().ok(`orders/${o.id}/finance-recommendation`, "POST", {
+    expectedVersion: o.version,
+    recommendation: "REJECT",
+    note: "الحسابات تقترح الرفض، والقرار النهائي للمدير",
+  });
   const invalid = [
     { itemId: o.items[0].id, status: "APPROVED" },
     { itemId: o.items[0].id, status: "APPROVED" },
@@ -289,8 +301,15 @@ test("B06 B07 B08 B14 atomic decisions, transition and stale version", async () 
     ).status,
     400,
   );
-  assert.equal((await mgr().ok("orders/" + o.id)).status, "PENDING_APPROVAL");
-  o = await approve(o, true);
+  assert.equal((await mgr().ok("orders/" + o.id)).status, "PENDING_MANAGER");
+  o = await mgr().ok(`orders/${o.id}/review`, "POST", {
+    expectedVersion: o.version,
+    decisions: o.items.map((i, n) => ({
+      itemId: i.id,
+      status: n ? "REJECTED" : "APPROVED",
+      ...(n ? { reason: "غير مناسب" } : {}),
+    })),
+  });
   assert.equal(o.approvalOutcome, "PARTIAL");
   assert.equal(
     o.items.find((i) => i.approvalStatus === "REJECTED").approvedQuantity,
@@ -304,7 +323,16 @@ test("B06 B07 B08 B14 atomic decisions, transition and stale version", async () 
     ).error.code,
     "VERSION_CONFLICT",
   );
-  const rejected = await make();
+  let rejected = await make();
+  rejected = await fin().ok(
+    `orders/${rejected.id}/finance-recommendation`,
+    "POST",
+    {
+      expectedVersion: rejected.version,
+      recommendation: "APPROVE",
+      note: "سليم",
+    },
+  );
   const result = await mgr().ok(`orders/${rejected.id}/review`, "POST", {
     expectedVersion: rejected.version,
     decisions: rejected.items.map((i) => ({
@@ -322,7 +350,7 @@ test("B09 B10 last stock contention and rollback of all products", async () => {
     unit: "كرتونة",
     active: true,
   });
-  await wh().ok("inventory/openings", "POST", {
+  await admin().ok("inventory/openings", "POST", {
     productId: product.id,
     quantity: 5,
     expectedVersion: 1,
@@ -428,7 +456,7 @@ test("B15 B18 B20 complete stock lifecycle; failure then delivery without extra 
     ).status,
     403,
   );
-  o = await clients.DRIVER.ok(`orders/${o.id}/dispatch`, "POST", {
+  o = await wh().ok(`orders/${o.id}/dispatch`, "POST", {
     expectedVersion: o.version,
   });
   o = await clients.DRIVER.ok(`orders/${o.id}/delivery-attempts`, "POST", {
@@ -478,7 +506,7 @@ test("B16 B17 cancellation races dispatch without dangling reservations", async 
       expectedVersion: o.version,
       reason: "اختبار إلغاء",
     }),
-    log().call(`orders/${o.id}/dispatch`, "POST", {
+    wh().call(`orders/${o.id}/dispatch`, "POST", {
       expectedVersion: o.version,
     }),
   ]);
@@ -506,7 +534,7 @@ test("B19 disable assigned driver vs dispatch cannot leave inactive driver in tr
   o = await wh().ok(`orders/${o.id}/warehouse-confirmation`, "POST", {
     expectedVersion: o.version,
   });
-  o = await log().ok(`orders/${o.id}/assignment`, "POST", {
+  o = await wh().ok(`orders/${o.id}/assignment`, "POST", {
     expectedVersion: o.version,
     driverId: created.id,
   });
@@ -518,7 +546,7 @@ test("B19 disable assigned driver vs dispatch cannot leave inactive driver in tr
       active: false,
       expectedVersion: created.version,
     }),
-    log().call(`orders/${o.id}/dispatch`, "POST", {
+    wh().call(`orders/${o.id}/dispatch`, "POST", {
       expectedVersion: o.version,
     }),
   ]);
@@ -545,7 +573,7 @@ test("B21 snapshots preserved, B23 adjustment cannot undercut reservations, B24 
   const b = (await wh().ok("inventory/balances")).find((b) => b.reserved > 0);
   assert.equal(
     (
-      await wh().call("inventory/adjustments", "POST", {
+      await admin().call("inventory/adjustments", "POST", {
         productId: b.productId,
         expectedVersion: b.version,
         countedOnHand: 0,
@@ -556,7 +584,7 @@ test("B21 snapshots preserved, B23 adjustment cannot undercut reservations, B24 
   );
   assert.equal(
     (
-      await wh().call("inventory/openings", "POST", {
+      await admin().call("inventory/openings", "POST", {
         productId: b.productId,
         expectedVersion: b.version,
         quantity: 1,
@@ -570,16 +598,47 @@ test("B21 snapshots preserved, B23 adjustment cannot undercut reservations, B24 
   );
   assert.equal(diff.rowCount, 0);
 });
-test("B25 DTOs omit secrets; role endpoints and unknown fields rejected", async () => {
+test("Warehouse receipts wait for finance approval before changing stock", async () => {
+  const product = products[2];
+  const before = (await wh().ok("inventory/balances")).find(
+    (b) => b.productId === product.id,
+  );
+  const receipt = await wh().ok("inventory/receipts", "POST", {
+    productId: product.id,
+    expectedVersion: before.version,
+    quantity: 17,
+    reason: "إذن وارد اختبار",
+  });
+  assert.equal(receipt.status, "PENDING_FINANCE");
+  assert.equal(
+    (await wh().ok("inventory/balances")).find(
+      (b) => b.productId === product.id,
+    ).onHand,
+    before.onHand,
+  );
+  const approved = await fin().ok(
+    `inventory/receipts/${receipt.id}/approve`,
+    "POST",
+    { expectedVersion: receipt.version, note: "تمت المطابقة" },
+  );
+  assert.equal(approved.status, "APPROVED");
+  assert.equal(
+    (await fin().ok("inventory/balances")).find(
+      (b) => b.productId === product.id,
+    ).onHand,
+    before.onHand + 17,
+  );
+});
+test("B25 DTOs omit secrets; finance masters and CEO-only endpoints are enforced", async () => {
+  for (const path of ["users", "activity"])
+    assert.equal((await clients.FINANCE.call(path)).status, 403);
   for (const path of [
-    "users",
     "customers",
     "products",
-    "activity",
     "inventory/movements",
     "lookups/customers",
   ])
-    assert.equal((await clients.FINANCE.call(path)).status, 403);
+    assert.equal((await clients.FINANCE.call(path)).status, 200);
   const w = JSON.stringify(await clients.FINANCE.ok("workspace"));
   assert.doesNotMatch(
     w,

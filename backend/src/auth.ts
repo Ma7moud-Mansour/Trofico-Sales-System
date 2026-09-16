@@ -44,7 +44,9 @@ export async function getActor(tx: Tx, id: string) {
 }
 export function requireRole(u: Actor, ...roles: string[]) {
   check(
-    u.active && roles.some((r) => u.roles.includes(r)),
+    u.active &&
+      (u.roles.includes("SUPER_ADMIN") ||
+        roles.some((r) => u.roles.includes(r))),
     403,
     "FORBIDDEN",
     "ليس لديك صلاحية لهذا الإجراء",
