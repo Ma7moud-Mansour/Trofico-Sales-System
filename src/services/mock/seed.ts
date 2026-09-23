@@ -7,6 +7,7 @@ import {
   permissions as allPermissions,
   type Permission,
 } from "@/domain/types";
+import veterinaryCatalog from "@/data/veterinary-products.json";
 export function createSeed(now = new Date().toISOString()): Database {
   const areas = [
     "منطقة الشرقية والقناة",
@@ -112,23 +113,10 @@ export function createSeed(now = new Date().toISOString()): Database {
     areaId: areas[i % areas.length].id,
     active: true,
   }));
-  const products = [
-    "عصير مانجو ٢٥٠ مل",
-    "عصير برتقال ٢٥٠ مل",
-    "عصير تفاح ١ لتر",
-    "عصير جوافة ١ لتر",
-    "مياه معدنية ٦٠٠ مل",
-    "مياه معدنية ١٫٥ لتر",
-    "مشروب ليمون ونعناع",
-    "عصير كوكتيل فواكه",
-    "حليب كامل الدسم ١ لتر",
-    "حليب بالشوكولاتة",
-    "بسكويت سادة",
-    "بسكويت بالشوكولاتة",
-  ].map((name, i) => ({
-    id: `p${i + 1}`,
-    sku: `TR-${String(i + 1).padStart(4, "0")}`,
-    name,
+  const products = veterinaryCatalog.products.map((product) => ({
+    id: `p${product.sourceId}`,
+    sku: product.sku,
+    name: product.name,
     unit: "عبوة",
     active: true,
   }));
@@ -187,7 +175,7 @@ export function createSeed(now = new Date().toISOString()): Database {
       notes: n % 4 === 0 ? "يرجى الاتصال بالعميل قبل الوصول." : "",
       status,
       items: [0, 1].map((_, j) => {
-        const p = products[(n + j) % 12];
+        const p = products[(n + j) % products.length];
         const reviewed = ![
           "DRAFT",
           "PENDING_FINANCE",

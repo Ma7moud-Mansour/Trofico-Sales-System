@@ -1,0 +1,214 @@
+{
+  "source": "https://trofico.net/products/veterinary",
+  "retrievedAt": "2026-09-24",
+  "products": [
+    {
+      "sourceId": 1,
+      "sku": "VET-001",
+      "name": "TRIJECT SOLVE",
+      "nameAr": "تراي جيكت سولف",
+      "category": "Respiratory",
+      "categoryAr": "تنفسي"
+    },
+    {
+      "sourceId": 2,
+      "sku": "VET-002",
+      "name": "NUTRISTART",
+      "nameAr": "نيوتري ستارت",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 3,
+      "sku": "VET-003",
+      "name": "ZYMAX GROWTH",
+      "nameAr": "زي ماكس جروث",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 4,
+      "sku": "VET-004",
+      "name": "LIV PLUS",
+      "nameAr": "ليف بلس",
+      "category": "Detox",
+      "categoryAr": "مضاد سموم"
+    },
+    {
+      "sourceId": 5,
+      "sku": "VET-005",
+      "name": "C-LAX",
+      "nameAr": "سي لاكس",
+      "category": "Detox",
+      "categoryAr": "مضاد سموم"
+    },
+    {
+      "sourceId": 6,
+      "sku": "VET-006",
+      "name": "GINEX FORTE",
+      "nameAr": "جينكس فورت",
+      "category": "Antiviral",
+      "categoryAr": "مضاد فيروسات"
+    },
+    {
+      "sourceId": 7,
+      "sku": "VET-007",
+      "name": "BIOTIMIPLEX",
+      "nameAr": "بيوتيمي بلكس",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 8,
+      "sku": "VET-008",
+      "name": "ERTHROHOST",
+      "nameAr": "إرثروهوست",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 9,
+      "sku": "VET-009",
+      "name": "FECTOSOL",
+      "nameAr": "فيكتوسول",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 10,
+      "sku": "VET-010",
+      "name": "ENDOPROL",
+      "nameAr": "إندوبرول",
+      "category": "Antiparasitics",
+      "categoryAr": "مضادات طفيليات"
+    },
+    {
+      "sourceId": 11,
+      "sku": "VET-011",
+      "name": "MEDI FLORO",
+      "nameAr": "ميدي فلورو",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 12,
+      "sku": "VET-012",
+      "name": "SWISS BIOPROL",
+      "nameAr": "سويس بيوبرول",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 13,
+      "sku": "VET-013",
+      "name": "CHLORATETRASOL",
+      "nameAr": "كلوراتيتراسول",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 14,
+      "sku": "VET-014",
+      "name": "MEDI LECTIN FORTE",
+      "nameAr": "ميدي ليكتين فورت",
+      "category": "Antiviral",
+      "categoryAr": "مضاد فيروسات"
+    },
+    {
+      "sourceId": 15,
+      "sku": "VET-015",
+      "name": "ALEXOCYCLENE",
+      "nameAr": "أليكسوسيكلين",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 16,
+      "sku": "VET-016",
+      "name": "MASOTETRIN",
+      "nameAr": "ماسوتيترين",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 17,
+      "sku": "VET-017",
+      "name": "VETROLACTAM",
+      "nameAr": "فيترولاكتام",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 18,
+      "sku": "VET-018",
+      "name": "LINCOSTOCK",
+      "nameAr": "لينكوستوك",
+      "category": "Antibiotics",
+      "categoryAr": "مضادات حيوية"
+    },
+    {
+      "sourceId": 19,
+      "sku": "VET-019",
+      "name": "MEDI ZOURIL",
+      "nameAr": "ميدي زوريل",
+      "category": "Antiparasitics",
+      "categoryAr": "مضادات طفيليات"
+    },
+    {
+      "sourceId": 20,
+      "sku": "VET-020",
+      "name": "PROMOFEN",
+      "nameAr": "بروموفين",
+      "category": "Respiratory",
+      "categoryAr": "تنفسي"
+    },
+    {
+      "sourceId": 21,
+      "sku": "VET-021",
+      "name": "ASCON",
+      "nameAr": "أسكون",
+      "category": "Detox",
+      "categoryAr": "مضاد سموم"
+    },
+    {
+      "sourceId": 22,
+      "sku": "VET-022",
+      "name": "V-CONTROL C",
+      "nameAr": "في-كنترول سي",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 23,
+      "sku": "VET-023",
+      "name": "MEDI VIT E 10% + SELENIUM",
+      "nameAr": "ميدي فيت إي 10٪ + سيلينيوم",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 24,
+      "sku": "VET-024",
+      "name": "SWISS AMINOVIT",
+      "nameAr": "سويس أمينوفيت",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 25,
+      "sku": "VET-025",
+      "name": "MEDICAL D MIX",
+      "nameAr": "ميديكال دي ميكس",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    },
+    {
+      "sourceId": 26,
+      "sku": "VET-026",
+      "name": "TROFIMAX D3",
+      "nameAr": "تروفيمكس دي3",
+      "category": "Vet Nutrition",
+      "categoryAr": "تغذية بيطرية"
+    }
+  ]
+}

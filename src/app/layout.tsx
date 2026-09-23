@@ -10,6 +10,7 @@ import "./reference-theme.css";
 export const metadata: Metadata = {
   title: "تروفيكو | إدارة طلبات المبيعات",
   description: "واجهة عربية لمتابعة الطلبات والموافقات والمخزن والتوصيل",
+  icons: { icon: "/trofico-logo.svg" },
 };
 export default async function RootLayout({
   children,

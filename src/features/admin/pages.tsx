@@ -64,7 +64,7 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
     mutation = useCommand(),
     permissionMutation = useCommand();
   const [search, setSearch] = useState(""),
-    [active, setActive] = useState(""),
+    [active, setActive] = useState(kind === "products" ? "active" : ""),
     [record, setRecord] = useState<MasterRecord | null>(null);
   const [permissionRole, setPermissionRole] = useState<Role>("SALES_MANAGER");
   const [permissionDraft, setPermissionDraft] = useState<Permission[] | null>(
@@ -383,16 +383,23 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                 </tr>
               </thead>
               <tbody>
-                {data.inventory.map((b) => (
-                  <tr key={b.productId}>
-                    <td>
-                      {data.products.find((p) => p.id === b.productId)?.name}
-                    </td>
-                    <td>{b.onHand}</td>
-                    <td>{b.reserved}</td>
-                    <td>{b.onHand - b.reserved}</td>
-                  </tr>
-                ))}
+                {data.inventory
+                  .filter(
+                    (balance) =>
+                      data.products.find(
+                        (product) => product.id === balance.productId,
+                      )?.active,
+                  )
+                  .map((b) => (
+                    <tr key={b.productId}>
+                      <td>
+                        {data.products.find((p) => p.id === b.productId)?.name}
+                      </td>
+                      <td>{b.onHand}</td>
+                      <td>{b.reserved}</td>
+                      <td>{b.onHand - b.reserved}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -698,6 +705,7 @@ export function InventoryPage() {
   const rows = data.inventory.filter((b) => {
     const p = products.get(b.productId);
     return (
+      p?.active !== false &&
       (!search || [p?.name, p?.sku].join(" ").includes(search)) &&
       (!filter ||
         (filter === "available"

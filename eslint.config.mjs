@@ -4,6 +4,11 @@ import ts from "eslint-config-next/typescript";
 export default defineConfig([
   ...next,
   ...ts,
-  globalIgnores([".next/**", "playwright-report/**", "test-results/**"]),
+  globalIgnores([
+    ".next/**",
+    ".runtime/**",
+    "playwright-report/**",
+    "test-results/**",
+  ]),
   { rules: { "react-hooks/set-state-in-effect": "off" } },
 ]);

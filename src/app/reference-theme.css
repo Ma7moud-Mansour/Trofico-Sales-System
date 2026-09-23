@@ -166,10 +166,12 @@
   font-size: 10px;
 }
 .sidebar .brand-icon {
-  width: 31px;
-  height: 34px;
-  background: transparent;
-  color: #a6d6ff;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #fff;
 }
 .sidebar .workspace-label,
 .sidebar .nav-group-label {
@@ -860,14 +862,11 @@ th {
   padding: 0;
 }
 .login-story .brand-icon {
-  width: 55px;
-  height: 55px;
-  background: transparent;
-  color: #a9d6ff;
-}
-.login-story .brand-icon svg {
-  width: 42px;
-  height: 42px;
+  width: 64px;
+  height: 64px;
+  padding: 5px;
+  border-radius: 12px;
+  background: #fff;
 }
 .login-story .brand b {
   color: #fff;

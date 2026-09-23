@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -185,10 +186,17 @@ function Shell({ children }: { children: ReactNode }) {
         <section className="login-story">
           <div className="brand">
             <span className="brand-icon">
-              <Boxes />
+              <Image
+                className="brand-logo"
+                src="/trofico-logo.svg"
+                alt="شعار تروفيكو فارما"
+                width={55}
+                height={55}
+                priority
+              />
             </span>
             <div>
-              <b>إدارة المبيعات</b>
+              <b>تروفيكو فارما</b>
               <small>نظام إدارة المبيعات</small>
             </div>
           </div>
@@ -312,10 +320,17 @@ function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar no-print">
         <Link href="/dashboard" className="brand">
           <span className="brand-icon">
-            <Boxes />
+            <Image
+              className="brand-logo"
+              src="/trofico-logo.svg"
+              alt="شعار تروفيكو فارما"
+              width={42}
+              height={42}
+              priority
+            />
           </span>
           <div>
-            <b>إدارة المبيعات</b>
+            <b>تروفيكو فارما</b>
             <small>إدارة طلبات المبيعات</small>
           </div>
         </Link>
