@@ -35,7 +35,7 @@ import {
   MapPinned,
 } from "lucide-react";
 import { services, subscribe, demo, mockEnabled } from "@/services";
-import { hasRole, routeRoles, needsAction } from "@/domain/policies";
+import { can, routePermissions, needsAction } from "@/domain/policies";
 import { type User, type ViewData } from "@/domain/types";
 import { ar, roleLabels, formatDate } from "@/messages/ar";
 import { useWorkspace } from "@/features/orders/hooks";
@@ -282,12 +282,15 @@ function Shell({ children }: { children: ReactNode }) {
         />
       </main>
     );
-  const permitted = !routeRoles[path] || hasRole(user, ...routeRoles[path]);
+  const permitted =
+    !routePermissions[path] || can(user, ...routePermissions[path]);
   const links = (
     <>
       <div className="nav-group-label">مساحة العمل</div>
       {nav
-        .filter(([p]) => !routeRoles[p] || hasRole(user, ...routeRoles[p]))
+        .filter(
+          ([p]) => !routePermissions[p] || can(user, ...routePermissions[p]),
+        )
         .map(([p, title, Icon]) => (
           <Link
             key={p}
@@ -481,9 +484,9 @@ function Shell({ children }: { children: ReactNode }) {
         {[
           ["/dashboard", "الرئيسية", LayoutDashboard],
           [
-            user.roles.includes("DRIVER") ? "/my-deliveries" : "/orders",
-            user.roles.includes("DRIVER") ? "مهامي" : "طلباتي",
-            user.roles.includes("DRIVER") ? Truck : ClipboardList,
+            can(user, "DELIVERY_CONFIRM") ? "/my-deliveries" : "/orders",
+            can(user, "DELIVERY_CONFIRM") ? "مهامي" : "طلباتي",
+            can(user, "DELIVERY_CONFIRM") ? Truck : ClipboardList,
           ],
           ["/profile", "حسابي", UserRound],
         ].map(([href, label, Icon]) => {

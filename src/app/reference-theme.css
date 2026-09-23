@@ -1,8 +1,14 @@
 /* Reference UI: compact operating workspace, navy navigation and blue actions. */
-.print-only { display: none; }
+.print-only {
+  display: none;
+}
 @media print {
-  .print-only { display: inline; }
-  .mobile-delivery-form { display: none !important; }
+  .print-only {
+    display: inline;
+  }
+  .mobile-delivery-form {
+    display: none !important;
+  }
 }
 @media (min-width: 901px) {
   .sales-order-form .form-grid {
@@ -985,16 +991,27 @@ th {
   flex-wrap: wrap;
   margin-top: 20px;
 }
-.permission-grid span {
+.permission-grid > label {
   display: flex;
   gap: 7px;
   align-items: center;
+  flex: 1 1 250px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
   font-size: 12px;
+  cursor: pointer;
 }
-.permission-grid .allowed {
+.permission-grid > label:has(input:disabled) {
+  cursor: default;
+}
+.permission-grid > label.allowed {
   color: #20764f;
+  border-color: #b9dfcf;
+  background: #f1faf6;
 }
-.permission-grid .blocked {
+.permission-grid > label.blocked {
   color: #697589;
 }
 .activity-detail {

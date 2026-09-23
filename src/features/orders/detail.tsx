@@ -20,7 +20,7 @@ import { useApp } from "@/components/app-shell";
 import { Badge, Stepper, Timeline, Waiting } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { canActOnOrder, shortages } from "@/domain/policies";
+import { can, canActOnOrder, shortages } from "@/domain/policies";
 import { type Order, type ReviewInput } from "@/domain/types";
 import {
   decisionLabels,
@@ -434,8 +434,7 @@ function Detail({ order: o }: { order: Order }) {
         <div>
           <span className="eyebrow">تفاصيل طلب المبيعات</span>
           <h1>
-            {user.roles.includes("WAREHOUSE_MANAGER") &&
-            o.status === "MANAGER_APPROVED"
+            {can(user, "WAREHOUSE_PREPARE") && o.status === "MANAGER_APPROVED"
               ? "تجهيز الطلب "
               : "طلب "}
             <bdi>{o.orderNumber}</bdi>
@@ -515,7 +514,7 @@ function Detail({ order: o }: { order: Order }) {
         <div className="detail-content">
           <details
             className="panel padded customer-disclosure"
-            open={o.status === "DRAFT" || user.roles.includes("DRIVER")}
+            open={o.status === "DRAFT" || can(user, "DELIVERY_CONFIRM")}
           >
             <summary className="section-title">
               <span className="section-icon">
@@ -562,9 +561,9 @@ function Detail({ order: o }: { order: Order }) {
             </div>
           </details>
           {!(
-            user.roles.includes("DRIVER") && canActOnOrder(user, o, "deliver")
+            can(user, "DELIVERY_CONFIRM") && canActOnOrder(user, o, "deliver")
           ) && <div className="mobile-action">{actions}</div>}
-          {user.roles.includes("DRIVER") &&
+          {can(user, "DELIVERY_CONFIRM") &&
             canActOnOrder(user, o, "deliver") && (
               <section className="panel padded mobile-delivery-form">
                 <h2>تأكيد التسليم</h2>

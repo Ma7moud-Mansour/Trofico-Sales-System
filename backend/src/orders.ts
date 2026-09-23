@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { type Tx, type Row, one, rows, write, check, MAIN } from "./db.js";
-import { type Actor, requireRole } from "./auth.js";
+import { type Actor } from "./auth.js";
+import {
+  type Permission,
+  hasPermission,
+  requirePermission,
+} from "./permissions.js";
 import { getOrder, event, expected, balance, movement } from "./repository.js";
 import { draftSchema, commandSchemas } from "./schemas.js";
 export async function draft(
@@ -10,7 +15,7 @@ export async function draft(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(u, "SALES_REP");
+  requirePermission(u, "ORDERS_CREATE");
   const p = draftSchema.parse(input);
   let o: Row | undefined;
   if (id) {
@@ -137,20 +142,20 @@ export function authorizeCommand(
   type: string,
   replay = false,
 ) {
-  const rules: Record<string, string[]> = {
-    submit: ["SALES_REP"],
-    "finance-recommendation": ["FINANCE"],
-    review: ["SALES_MANAGER"],
-    "warehouse-confirmation": ["WAREHOUSE_MANAGER"],
-    "warehouse-notes": ["WAREHOUSE_MANAGER"],
-    assignment: ["WAREHOUSE_MANAGER"],
-    dispatch: ["WAREHOUSE_MANAGER"],
-    deliver: ["DRIVER"],
-    "delivery-attempts": ["DRIVER"],
-    cancel: ["SALES_REP", "SALES_MANAGER", "SUPER_ADMIN"],
-    delete: ["SALES_REP"],
+  const rules: Record<string, Permission[]> = {
+    submit: ["ORDERS_CREATE"],
+    "finance-recommendation": ["FINANCE_RECOMMEND"],
+    review: ["MANAGER_DECIDE"],
+    "warehouse-confirmation": ["WAREHOUSE_PREPARE"],
+    "warehouse-notes": ["WAREHOUSE_PREPARE"],
+    assignment: ["WAREHOUSE_PREPARE"],
+    dispatch: ["WAREHOUSE_PREPARE"],
+    deliver: ["DELIVERY_CONFIRM"],
+    "delivery-attempts": ["DELIVERY_CONFIRM"],
+    cancel: ["ORDERS_CREATE", "MANAGER_DECIDE"],
+    delete: ["ORDERS_CREATE"],
   };
-  requireRole(u, ...rules[type]);
+  requirePermission(u, ...rules[type]);
   if (
     ["deliver", "delivery-attempts"].includes(type) &&
     !u.roles.includes("SUPER_ADMIN")
@@ -165,7 +170,7 @@ export function authorizeCommand(
     check(o.createdBy === u.id, 404, "NOT_FOUND", "الطلب غير موجود");
   if (
     type === "cancel" &&
-    !u.roles.includes("SALES_MANAGER") &&
+    !hasPermission(u, "MANAGER_DECIDE") &&
     !u.roles.includes("SUPER_ADMIN")
   )
     check(
@@ -230,10 +235,22 @@ export async function orderCommand(
     );
     const customer = await one(
       tx,
-      "SELECT * FROM customers WHERE id=$1::uuid AND active",
+      `SELECT c.* FROM customers c
+       WHERE c.id=$1::uuid AND c.active AND (
+         $2::boolean OR EXISTS(
+           SELECT 1 FROM user_areas ua WHERE ua.user_id=$3::uuid AND ua.area_id=c.area_id
+         )
+       )`,
       o.customerId,
+      u.roles.includes("SUPER_ADMIN"),
+      u.id,
     );
-    check(customer, 400, "VALIDATION_ERROR", "العميل غير نشط");
+    check(
+      customer,
+      400,
+      "VALIDATION_ERROR",
+      "العميل غير نشط أو خارج المناطق المخصصة لك",
+    );
     for (const i of items) {
       const product = await one(
         tx,

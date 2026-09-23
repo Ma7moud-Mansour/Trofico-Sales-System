@@ -4,6 +4,9 @@ import {
   type Order,
   type ViewData,
   type DomainErrorCode,
+  type RolePermissionSet,
+  type Role,
+  type Permission,
 } from "@/domain/types";
 import type { Services, MasterKind, MasterRecord } from "./contracts";
 let csrf: string | undefined;
@@ -113,6 +116,7 @@ const keys = new Map<string, string>();
 export async function saveMaster(kind: MasterKind, r: MasterRecord) {
   const { id, version, ...fields } = r;
   delete (fields as Partial<User>).mustChangePassword;
+  delete (fields as Partial<User>).permissions;
   const body = { ...fields, ...(id ? { expectedVersion: version } : {}) };
   const signature = JSON.stringify([kind, id, body]);
   const key = keys.get(signature) || crypto.randomUUID();
@@ -190,6 +194,15 @@ export const httpServices: Omit<Services, "session"> = {
   customers: { save: (r) => saveMaster("customers", r) },
   products: { save: (r) => saveMaster("products", r) },
   areas: { save: (r) => saveMaster("areas", r) },
+  permissions: {
+    save: (role: Role, permissions: Permission[], expectedVersion: number) =>
+      request<RolePermissionSet>(
+        "role-permissions/" + role,
+        "PATCH",
+        { permissions, expectedVersion },
+        crypto.randomUUID(),
+      ),
+  },
   inventory: { list: () => request("inventory/balances") },
   activity: { list: () => request("activity") },
 };

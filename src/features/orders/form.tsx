@@ -8,7 +8,7 @@ import { Plus, Trash2, Send, Save, ArrowRight, Package } from "lucide-react";
 import { useApp } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { canActOnOrder, hasRole } from "@/domain/policies";
+import { can, canActOnOrder } from "@/domain/policies";
 import { DomainError, type SaveDraftInput } from "@/domain/types";
 import { services } from "@/services";
 import { orderSchema, normalizeDigits } from "./schemas";
@@ -25,7 +25,7 @@ export function OrderForm({ id }: { id?: string }) {
   const { data } = useApp();
   const order = data.orders.find((o) => o.id === id);
   if (
-    !hasRole(data.user, "SALES_REP") ||
+    !can(data.user, "ORDERS_CREATE") ||
     (id && (!order || !canActOnOrder(data.user, order, "edit")))
   )
     return (
@@ -285,7 +285,7 @@ function FormContent({ id }: { id?: string }) {
               </label>
             </div>
             <p className="helper">
-              {data.user.roles.includes("SALES_REP") &&
+              {can(data.user, "ORDERS_CREATE") &&
               !data.user.roles.includes("SUPER_ADMIN")
                 ? "تظهر هنا فقط عملاء المناطق المخصصة لك. "
                 : ""}

@@ -290,6 +290,13 @@ model user_roles {
   @@id([user_id, role])
 }
 
+model role_permission_sets {
+  role        String   @id
+  permissions String[]
+  version     Int      @default(1)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
 model user_areas {
   user_id String @db.Uuid
   area_id String @db.Uuid

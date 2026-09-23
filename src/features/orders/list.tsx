@@ -26,7 +26,7 @@ import {
   formatDate,
   ar,
 } from "@/messages/ar";
-import { hasRole, needsAction } from "@/domain/policies";
+import { can, needsAction } from "@/domain/policies";
 import { filterOrders } from "@/domain/selectors";
 import { statuses, type Order, type OrderFilters } from "@/domain/types";
 import { OperationalTable, ScopeSummary } from "./operational-table";
@@ -120,7 +120,7 @@ export function Dashboard() {
       color: "green",
     },
   ];
-  if (user.roles.includes("SALES_MANAGER"))
+  if (can(user, "MANAGER_DECIDE"))
     cards = cards.map((c, i) =>
       i === 1
         ? {
@@ -146,7 +146,7 @@ export function Dashboard() {
               }
             : c,
     );
-  if (user.roles.includes("WAREHOUSE_MANAGER"))
+  if (can(user, "WAREHOUSE_PREPARE"))
     cards = [
       {
         ...cards[0],
@@ -169,7 +169,7 @@ export function Dashboard() {
       },
       cards[3],
     ];
-  if (user.roles.includes("LOGISTICS"))
+  if (can(user, "LOGISTICS_VIEW"))
     cards = [
       {
         ...cards[0],
@@ -194,7 +194,7 @@ export function Dashboard() {
           .length,
       },
     ];
-  if (user.roles.includes("DRIVER")) {
+  if (can(user, "DELIVERY_CONFIRM")) {
     const assigned = orders.filter((o) => o.assignment?.driverId === user.id);
     cards = [
       { ...cards[0], label: "مسند إليّ", value: assigned.length, query: "" },
@@ -225,7 +225,7 @@ export function Dashboard() {
           <h1>نظرة عامة</h1>
           <p>أهلًا، {user.name} · كل طلب واضح، وكل خطوة محسوبة.</p>
         </div>
-        {hasRole(user, "SALES_REP") && (
+        {can(user, "ORDERS_CREATE") && (
           <Button asChild>
             <Link href="/orders/new">
               <Plus size={18} /> إنشاء طلب جديد
@@ -238,7 +238,7 @@ export function Dashboard() {
           <Link
             key={c.label}
             className="stat"
-            href={`${user.roles.includes("DRIVER") ? "/my-deliveries" : "/orders"}?${c.query}`}
+            href={`${can(user, "DELIVERY_CONFIRM") ? "/my-deliveries" : "/orders"}?${c.query}`}
           >
             <div className="stat-top">
               <span>{c.label}</span>
@@ -434,7 +434,7 @@ export function OrdersList() {
           <h1>{titles[path]}</h1>
           <p>اعرف كل طلب عند مَن، وما الخطوة التالية.</p>
         </div>
-        {hasRole(data.user, "SALES_REP") && (
+        {can(data.user, "ORDERS_CREATE") && (
           <Button asChild>
             <Link href="/orders/new">
               <Plus size={18} /> إنشاء طلب جديد
@@ -491,7 +491,7 @@ export function OrdersList() {
           >
             مطلوب مني
           </button>
-          {hasRole(data.user, "SALES_REP") && (
+          {can(data.user, "ORDERS_CREATE") && (
             <button
               className={f.tab === "drafts" ? "selected" : ""}
               onClick={() => update({ tab: "drafts" })}

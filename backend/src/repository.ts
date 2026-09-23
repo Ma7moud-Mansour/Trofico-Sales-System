@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DateTime } from "luxon";
 import { type Tx, type Row, rows, one, write, check, MAIN } from "./db.js";
 import { type Actor } from "./auth.js";
+import { hasPermission } from "./permissions.js";
 export const iso = (x: unknown) =>
   x instanceof Date ? x.toISOString() : x == null ? undefined : String(x);
 export function camel(row: Row): Row {
@@ -12,24 +13,33 @@ export function camel(row: Row): Row {
     ]),
   );
 }
-export const has = (u: Actor, ...r: string[]) =>
-  u.active &&
-  (u.roles.includes("SUPER_ADMIN") || r.some((x) => u.roles.includes(x)));
 export function scope(u: Actor, offset = 1) {
   if (u.active && u.roles.includes("SUPER_ADMIN"))
     return { sql: "true", args: [] as unknown[] };
-  const broad = has(
+  const canView = hasPermission(u, "ORDERS_VIEW");
+  const creates = hasPermission(u, "ORDERS_CREATE");
+  const owns = creates || u.roles.includes("SALES_REP");
+  const delivery = hasPermission(u, "DELIVERY_CONFIRM");
+  const operational = hasPermission(
     u,
-    "SALES_MANAGER",
-    "WAREHOUSE_MANAGER",
-    "FINANCE",
-    "LOGISTICS",
-    "DRIVER",
-    "SUPER_ADMIN",
+    "FINANCE_RECOMMEND",
+    "MANAGER_DECIDE",
+    "WAREHOUSE_PREPARE",
+    "LOGISTICS_VIEW",
   );
+  const broad = canView && operational;
   return {
-    sql: `((o.status='DRAFT' AND o.created_by=$${offset}::uuid AND $${offset + 1}::boolean) OR (o.status<>'DRAFT' AND ($${offset + 2}::boolean OR (o.created_by=$${offset}::uuid AND $${offset + 1}::boolean))))`,
-    args: [u.id, has(u, "SALES_REP"), broad],
+    sql: `($${offset + 1}::boolean AND (
+      (o.status='DRAFT' AND o.created_by=$${offset}::uuid AND $${offset + 2}::boolean)
+      OR (o.status<>'DRAFT' AND (
+        $${offset + 3}::boolean
+        OR (o.created_by=$${offset}::uuid AND $${offset + 2}::boolean)
+        OR ($${offset + 4}::boolean AND EXISTS(
+          SELECT 1 FROM order_assignments sa WHERE sa.order_id=o.id AND sa.driver_id=$${offset}::uuid
+        ))
+      ))
+    ))`,
+    args: [u.id, canView, owns, broad, delivery],
   };
 }
 export async function getOrder(tx: Tx, id: string, u: Actor, lock = false) {
@@ -224,11 +234,13 @@ export async function listOrders(
   if (f.tab === "submitted") clauses.push("o.status<>'DRAFT'");
   if (f.tab === "mine") {
     const c: string[] = [];
-    if (has(u, "FINANCE")) c.push("o.status='PENDING_FINANCE'");
-    if (has(u, "SALES_MANAGER")) c.push("o.status='PENDING_MANAGER'");
-    if (has(u, "WAREHOUSE_MANAGER"))
+    if (hasPermission(u, "FINANCE_RECOMMEND"))
+      c.push("o.status='PENDING_FINANCE'");
+    if (hasPermission(u, "MANAGER_DECIDE"))
+      c.push("o.status='PENDING_MANAGER'");
+    if (hasPermission(u, "WAREHOUSE_PREPARE"))
       c.push("o.status IN ('MANAGER_APPROVED','WAREHOUSE_CONFIRMED')");
-    if (has(u, "DRIVER")) {
+    if (hasPermission(u, "DELIVERY_CONFIRM")) {
       args.push(u.id);
       c.push(
         `o.status IN ('WAREHOUSE_CONFIRMED','IN_TRANSIT') AND EXISTS(SELECT 1 FROM order_assignments a WHERE a.order_id=o.id AND a.driver_id=$${args.length}::uuid)`,

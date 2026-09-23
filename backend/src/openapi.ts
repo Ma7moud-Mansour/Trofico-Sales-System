@@ -11,6 +11,7 @@ import {
   areaSchema,
   stockSchema,
   stockReceiptReviewSchema,
+  rolePermissionSchema,
   version,
 } from "./schemas.js";
 const paths: Record<string, unknown> = {};
@@ -74,6 +75,7 @@ for (const p of [
   "customers",
   "products",
   "areas",
+  "role-permissions",
   "lookups/customers",
   "lookups/products",
   "lookups/drivers",
@@ -108,13 +110,14 @@ add(
   "post",
   z.object({ expectedVersion: version }).strict(),
 );
+add("role-permissions/{role}", "patch", rolePermissionSchema);
 for (const k of ["openings", "receipts", "adjustments"])
   add("inventory/" + k, "post", stockSchema);
 for (const decision of ["approve", "reject"])
   add(`inventory/receipts/{id}/${decision}`, "post", stockReceiptReviewSchema);
 export const openApi = {
   openapi: "3.0.3",
-  info: { title: "Trofico Sales API", version: "2.1.0" },
+  info: { title: "Trofico Sales API", version: "2.2.0" },
   paths,
   components: {
     securitySchemes: {

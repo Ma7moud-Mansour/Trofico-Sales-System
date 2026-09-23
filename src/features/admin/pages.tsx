@@ -1,20 +1,15 @@
 "use client";
 import { useState, useRef } from "react";
-import {
-  Plus,
-  Search,
-  UserRound,
-  Boxes,
-  CheckCircle2,
-  MinusCircle,
-  MapPin,
-} from "lucide-react";
+import { Plus, Search, UserRound, Boxes, MapPin } from "lucide-react";
 import { useApp } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Empty } from "@/components/shared";
 import {
+  permissions,
   roles,
+  type Permission,
+  type Role,
   type User,
   type Product,
   type Customer,
@@ -33,13 +28,48 @@ const kindNames = {
   products: "المنتجات",
   areas: "المناطق",
 };
+const permissionLabels: Record<Permission, string> = {
+  ORDERS_VIEW: "عرض الطلبات",
+  ORDERS_CREATE: "إنشاء الطلبات وإدارة المسودات",
+  FINANCE_RECOMMEND: "تسجيل توصية الحسابات",
+  MANAGER_DECIDE: "اتخاذ قرار الاعتماد النهائي",
+  WAREHOUSE_PREPARE: "تجهيز الطلب وتعيين السائق وخروجه",
+  LOGISTICS_VIEW: "متابعة الحركة والتوصيل",
+  DELIVERY_CONFIRM: "تأكيد التسليم أو تعذره",
+  INVENTORY_VIEW: "عرض أرصدة المخزون",
+  INVENTORY_RECEIVE: "تسجيل الوارد إلى المخزن",
+  RECEIPTS_APPROVE: "اعتماد أو رفض الوارد",
+  CUSTOMERS_MANAGE: "إضافة العملاء وتعديلهم",
+  PRODUCTS_MANAGE: "تكويد المنتجات وتعديلها",
+  STOCK_ADJUST: "تسوية وافتتاح أرصدة المخزون",
+  USERS_MANAGE: "إدارة المستخدمين وأدوارهم",
+  AREAS_MANAGE: "إدارة المناطق",
+  ACTIVITY_VIEW: "عرض سجل كل العمليات",
+};
+const orderActionPermissions: Permission[] = [
+  "ORDERS_CREATE",
+  "FINANCE_RECOMMEND",
+  "MANAGER_DECIDE",
+  "WAREHOUSE_PREPARE",
+  "LOGISTICS_VIEW",
+  "DELIVERY_CONFIRM",
+];
+const inventoryActionPermissions: Permission[] = [
+  "INVENTORY_RECEIVE",
+  "RECEIPTS_APPROVE",
+  "STOCK_ADJUST",
+];
 export function MasterPage({ kind }: { kind: MasterKind }) {
   const { data, toast } = useApp(),
-    mutation = useCommand();
+    mutation = useCommand(),
+    permissionMutation = useCommand();
   const [search, setSearch] = useState(""),
     [active, setActive] = useState(""),
     [record, setRecord] = useState<MasterRecord | null>(null);
-  const [permissionRole, setPermissionRole] = useState("SALES_MANAGER");
+  const [permissionRole, setPermissionRole] = useState<Role>("SALES_MANAGER");
+  const [permissionDraft, setPermissionDraft] = useState<Permission[] | null>(
+    null,
+  );
   const [resetUser, setResetUser] = useState<User | null>(null);
   const resetKey = useRef({ signature: "", key: "" });
   const records = data[kind].filter(
@@ -65,6 +95,7 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
             name: "",
             username: "",
             roles: ["SALES_REP"],
+            permissions: [],
             areaIds: data.areas
               .filter((area) => area.active)
               .slice(0, 1)
@@ -104,6 +135,41 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
         toast("تم حفظ البيانات الأساسية");
       })
       .catch(() => {});
+  }
+  const selectedPermissionSet = data.rolePermissions.find(
+    (set) => set.role === permissionRole,
+  );
+  const selectedPermissions =
+    permissionRole === "SUPER_ADMIN"
+      ? [...permissions]
+      : (permissionDraft ?? selectedPermissionSet?.permissions ?? []);
+  function togglePermission(permission: Permission, checked: boolean) {
+    let next = checked
+      ? [...new Set([...selectedPermissions, permission])]
+      : selectedPermissions.filter((item) => item !== permission);
+    if (checked && orderActionPermissions.includes(permission))
+      next = [...new Set([...next, "ORDERS_VIEW" as Permission])];
+    if (checked && inventoryActionPermissions.includes(permission))
+      next = [...new Set([...next, "INVENTORY_VIEW" as Permission])];
+    if (!checked && permission === "ORDERS_VIEW")
+      next = next.filter((item) => !orderActionPermissions.includes(item));
+    if (!checked && permission === "INVENTORY_VIEW")
+      next = next.filter((item) => !inventoryActionPermissions.includes(item));
+    setPermissionDraft(next);
+  }
+  async function savePermissions() {
+    if (!selectedPermissionSet || permissionRole === "SUPER_ADMIN") return;
+    try {
+      await permissionMutation.mutateAsync(() =>
+        services.permissions.save(
+          permissionRole,
+          selectedPermissions,
+          selectedPermissionSet.version,
+        ),
+      );
+      setPermissionDraft(null);
+      toast(`تم حفظ صلاحيات دور ${roleLabels[permissionRole]}`);
+    } catch {}
   }
   return (
     <>
@@ -332,17 +398,22 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
           </div>
         </section>
       )}
-      {kind === "users" && (
+      {kind === "users" && data.user.roles.includes("SUPER_ADMIN") && (
         <section className="panel padded permission-panel">
-          <h2>صلاحيات الدور</h2>
+          <h2>تعديل صلاحيات الأدوار</h2>
           <p className="muted">
-            عرض سياسة الدور؛ الإجراءات تخضع أيضًا لمرحلة الطلب ونطاق رؤيته.
+            اختر دورًا وحدد ما يستطيع مستخدموه تنفيذه. يطبق التغيير على كل
+            حسابات الدور فورًا.
           </p>
           <label>
             الدور
             <select
               value={permissionRole}
-              onChange={(e) => setPermissionRole(e.target.value)}
+              onChange={(e) => {
+                setPermissionRole(e.target.value as Role);
+                setPermissionDraft(null);
+                permissionMutation.reset();
+              }}
             >
               {roles.map((r) => (
                 <option key={r} value={r}>
@@ -352,48 +423,60 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
             </select>
           </label>
           <div className="permission-grid">
-            {[
-              ["عرض الطلبات", true],
-              [
-                "إنشاء الطلب",
-                ["SALES_REP", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              [
-                "توصية الحسابات",
-                ["FINANCE", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              [
-                "قرار الاعتماد النهائي",
-                ["SALES_MANAGER", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              [
-                "تسجيل الوارد وتجهيز وتسليم السائق",
-                ["WAREHOUSE_MANAGER", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              [
-                "تأكيد التسليم",
-                ["DRIVER", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              [
-                "إدارة العملاء والمنتجات واعتماد الوارد",
-                ["FINANCE", "SUPER_ADMIN"].includes(permissionRole),
-              ],
-              ["إدارة المستخدمين والمناطق", permissionRole === "SUPER_ADMIN"],
-              ["عرض كل التحركات", permissionRole === "SUPER_ADMIN"],
-            ].map(([label, allowed]) => (
-              <span
-                key={String(label)}
-                className={allowed ? "allowed" : "blocked"}
+            {permissions.map((permission) => (
+              <label
+                key={permission}
+                className={
+                  selectedPermissions.includes(permission)
+                    ? "allowed"
+                    : "blocked"
+                }
               >
-                {allowed ? (
-                  <CheckCircle2 size={17} />
-                ) : (
-                  <MinusCircle size={17} />
-                )}{" "}
-                {label}
-              </span>
+                <input
+                  type="checkbox"
+                  checked={selectedPermissions.includes(permission)}
+                  disabled={permissionRole === "SUPER_ADMIN"}
+                  onChange={(event) =>
+                    togglePermission(permission, event.target.checked)
+                  }
+                />
+                <span>{permissionLabels[permission]}</span>
+              </label>
             ))}
           </div>
+          {permissionRole === "SUPER_ADMIN" ? (
+            <div className="alert info">
+              صلاحيات الإدارة العليا كاملة وثابتة لحماية حساب د. محمد صبري.
+            </div>
+          ) : (
+            <div className="form-actions">
+              <Button
+                disabled={
+                  permissionMutation.isPending ||
+                  !selectedPermissionSet ||
+                  permissionDraft === null
+                }
+                onClick={savePermissions}
+              >
+                {permissionMutation.isPending
+                  ? "جارٍ حفظ الصلاحيات…"
+                  : "حفظ صلاحيات الدور"}
+              </Button>
+              {permissionDraft !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => setPermissionDraft(null)}
+                >
+                  إلغاء التعديلات
+                </Button>
+              )}
+            </div>
+          )}
+          {permissionMutation.error && (
+            <div role="alert" className="alert error">
+              {permissionMutation.error.message}
+            </div>
+          )}
         </section>
       )}
       <Dialog

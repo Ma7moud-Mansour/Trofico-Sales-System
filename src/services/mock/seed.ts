@@ -3,6 +3,9 @@ import {
   type Order,
   type Status,
   type Role,
+  roles,
+  permissions as allPermissions,
+  type Permission,
 } from "@/domain/types";
 export function createSeed(now = new Date().toISOString()): Database {
   const areas = [
@@ -44,6 +47,32 @@ export function createSeed(now = new Date().toISOString()): Database {
     "DRIVER",
     "SUPER_ADMIN",
   ];
+  const defaults: Record<Role, Permission[]> = {
+    SALES_REP: ["ORDERS_VIEW", "ORDERS_CREATE"],
+    SALES_MANAGER: ["ORDERS_VIEW", "MANAGER_DECIDE", "INVENTORY_VIEW"],
+    WAREHOUSE_MANAGER: [
+      "ORDERS_VIEW",
+      "WAREHOUSE_PREPARE",
+      "INVENTORY_VIEW",
+      "INVENTORY_RECEIVE",
+    ],
+    FINANCE: [
+      "ORDERS_VIEW",
+      "FINANCE_RECOMMEND",
+      "INVENTORY_VIEW",
+      "RECEIPTS_APPROVE",
+      "CUSTOMERS_MANAGE",
+      "PRODUCTS_MANAGE",
+    ],
+    LOGISTICS: ["ORDERS_VIEW", "LOGISTICS_VIEW"],
+    DRIVER: ["ORDERS_VIEW", "DELIVERY_CONFIRM"],
+    SUPER_ADMIN: [...allPermissions],
+  };
+  const rolePermissions = roles.map((role) => ({
+    role,
+    permissions: defaults[role],
+    version: 1,
+  }));
   const users = names.map((name, i) => ({
     id: `u${i + 1}`,
     name,
@@ -59,6 +88,7 @@ export function createSeed(now = new Date().toISOString()): Database {
       "admin",
     ][i],
     roles: [rs[i]],
+    permissions: defaults[rs[i]],
     areaIds: i === 0 ? ["a1", "a6"] : i === 1 ? ["a2", "a5"] : [],
     active: true,
   }));
@@ -107,6 +137,7 @@ export function createSeed(now = new Date().toISOString()): Database {
     orderSequence: 24,
     referenceTime: now,
     users,
+    rolePermissions,
     areas,
     customers,
     products,

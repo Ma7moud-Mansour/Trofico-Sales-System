@@ -4,9 +4,11 @@ import {
   type ViewData,
   type User,
   type MutationMeta,
+  type Role,
+  type Permission,
 } from "@/domain/types";
 import { executeCommand, type Command } from "@/domain/commands";
-import { assert, canViewOrder, hasRole } from "@/domain/policies";
+import { assert, can, canViewOrder, hasRole } from "@/domain/policies";
 import { filterOrders } from "@/domain/selectors";
 import type { Services, MasterKind, MasterRecord } from "../contracts";
 import { createSeed } from "./seed";
@@ -58,12 +60,27 @@ function read(): Database {
       parsed.stockReceipts ??= [];
       const defaults = createSeed();
       parsed.areas ??= defaults.areas;
+      parsed.rolePermissions ??= defaults.rolePermissions;
       for (const [index, user] of (parsed.users ?? []).entries())
         user.areaIds ??= user.roles.includes("SALES_REP")
           ? [parsed.areas[index % parsed.areas.length].id]
           : [];
       for (const [index, customer] of (parsed.customers ?? []).entries())
         customer.areaId ??= parsed.areas[index % parsed.areas.length].id;
+      for (const user of parsed.users ?? [])
+        user.permissions = user.roles.includes("SUPER_ADMIN")
+          ? defaults.rolePermissions.find((set) => set.role === "SUPER_ADMIN")!
+              .permissions
+          : [
+              ...new Set(
+                user.roles.flatMap(
+                  (role: Role) =>
+                    parsed.rolePermissions.find(
+                      (set: { role: Role }) => set.role === role,
+                    )?.permissions ?? [],
+                ),
+              ),
+            ];
       for (const product of parsed.products ?? []) product.unit = "عبوة";
       for (const order of parsed.orders ?? [])
         if (order.status === "PENDING_APPROVAL")
@@ -135,41 +152,35 @@ function view(db: Database, u: User): ViewData {
     user: u,
     orders,
     users: db.users,
-    areas:
-      u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
-        ? db.areas
-        : u.roles.includes("SALES_REP")
-          ? db.areas.filter(
-              (area) => area.active && u.areaIds.includes(area.id),
-            )
-          : [],
-    customers:
-      u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
-        ? db.customers
-        : u.roles.includes("SALES_REP")
-          ? db.customers.filter((customer) =>
-              u.areaIds.includes(customer.areaId),
-            )
-          : [],
-    products: hasRole(
+    rolePermissions: u.roles.includes("SUPER_ADMIN") ? db.rolePermissions : [],
+    areas: can(u, "CUSTOMERS_MANAGE", "AREAS_MANAGE")
+      ? db.areas
+      : can(u, "ORDERS_CREATE")
+        ? db.areas.filter((area) => area.active && u.areaIds.includes(area.id))
+        : [],
+    customers: can(u, "CUSTOMERS_MANAGE")
+      ? db.customers
+      : can(u, "ORDERS_CREATE")
+        ? db.customers.filter((customer) => u.areaIds.includes(customer.areaId))
+        : [],
+    products: can(
       u,
-      "SALES_REP",
-      "FINANCE",
-      "SALES_MANAGER",
-      "WAREHOUSE_MANAGER",
+      "ORDERS_CREATE",
+      "PRODUCTS_MANAGE",
+      "INVENTORY_VIEW",
+      "INVENTORY_RECEIVE",
+      "WAREHOUSE_PREPARE",
     )
       ? db.products
       : [],
-    inventory: hasRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE")
-      ? db.inventory
-      : [],
-    stockReceipts: hasRole(u, "WAREHOUSE_MANAGER", "FINANCE")
+    inventory: can(u, "INVENTORY_VIEW") ? db.inventory : [],
+    stockReceipts: can(u, "INVENTORY_RECEIVE", "RECEIPTS_APPROVE")
       ? db.stockReceipts
       : [],
     reservations: db.reservations.filter((r) => ids.has(r.orderId)),
     attempts: db.attempts.filter((a) => ids.has(a.orderId)),
     activity: db.activity.filter(
-      (e) => hasRole(u, "SUPER_ADMIN") || (!!e.orderId && ids.has(e.orderId)),
+      (e) => can(u, "ACTIVITY_VIEW") || (!!e.orderId && ids.has(e.orderId)),
     ),
   };
 }
@@ -181,9 +192,13 @@ async function getView() {
 async function saveMaster(kind: MasterKind, input: MasterRecord) {
   return transaction((db, u) => {
     assert(
-      kind === "users" || kind === "areas"
-        ? hasRole(u, "SUPER_ADMIN")
-        : hasRole(u, "FINANCE"),
+      kind === "users"
+        ? can(u, "USERS_MANAGE")
+        : kind === "areas"
+          ? can(u, "AREAS_MANAGE")
+          : kind === "customers"
+            ? can(u, "CUSTOMERS_MANAGE")
+            : can(u, "PRODUCTS_MANAGE"),
       kind === "users" || kind === "areas"
         ? "هذه العملية متاحة للإدارة العليا فقط"
         : "هذه العملية متاحة للحسابات فقط",
@@ -271,6 +286,22 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
     const index = records.findIndex((r) => r.id === record.id);
     if (index >= 0) records[index] = record;
     else records.push(record);
+    if (kind === "users" && "roles" in record)
+      record.permissions = record.roles.includes("SUPER_ADMIN")
+        ? [
+            ...createSeed().rolePermissions.find(
+              (set) => set.role === "SUPER_ADMIN",
+            )!.permissions,
+          ]
+        : [
+            ...new Set(
+              record.roles.flatMap(
+                (role) =>
+                  db.rolePermissions.find((set) => set.role === role)
+                    ?.permissions ?? [],
+              ),
+            ),
+          ];
     if (
       kind === "products" &&
       !db.inventory.some((b) => b.productId === record.id)
@@ -366,6 +397,72 @@ export const services: Services = {
   customers: { save: (input) => saveMaster("customers", input) },
   products: { save: (input) => saveMaster("products", input) },
   areas: { save: (input) => saveMaster("areas", input) },
+  permissions: {
+    save: (role: Role, permissions: Permission[], expectedVersion: number) =>
+      transaction((db, u) => {
+        assert(
+          u.roles.includes("SUPER_ADMIN"),
+          "هذا الإجراء متاح لمدير النظام فقط",
+          "FORBIDDEN",
+        );
+        assert(role !== "SUPER_ADMIN", "صلاحيات مدير النظام كاملة وثابتة");
+        const current = db.rolePermissions.find((set) => set.role === role);
+        assert(current, "الدور غير موجود", "NOT_FOUND");
+        assert(
+          current.version === expectedVersion,
+          "تم تعديل الصلاحيات بواسطة مستخدم آخر. حدّث البيانات وحاول مجددًا",
+          "VERSION_CONFLICT",
+        );
+        const orderActions: Permission[] = [
+          "ORDERS_CREATE",
+          "FINANCE_RECOMMEND",
+          "MANAGER_DECIDE",
+          "WAREHOUSE_PREPARE",
+          "LOGISTICS_VIEW",
+          "DELIVERY_CONFIRM",
+        ];
+        const inventoryActions: Permission[] = [
+          "INVENTORY_RECEIVE",
+          "RECEIPTS_APPROVE",
+          "STOCK_ADJUST",
+        ];
+        const normalized = [...new Set(permissions)];
+        if (normalized.some((permission) => orderActions.includes(permission)))
+          normalized.push("ORDERS_VIEW");
+        if (
+          normalized.some((permission) => inventoryActions.includes(permission))
+        )
+          normalized.push("INVENTORY_VIEW");
+        current.permissions = [...new Set(normalized)];
+        current.version++;
+        for (const user of db.users)
+          user.permissions = user.roles.includes("SUPER_ADMIN")
+            ? [
+                ...createSeed().rolePermissions.find(
+                  (set) => set.role === "SUPER_ADMIN",
+                )!.permissions,
+              ]
+            : [
+                ...new Set(
+                  user.roles.flatMap(
+                    (userRole) =>
+                      db.rolePermissions.find((set) => set.role === userRole)
+                        ?.permissions ?? [],
+                  ),
+                ),
+              ];
+        db.activity.push({
+          id: crypto.randomUUID(),
+          actorId: u.id,
+          actorNameSnapshot: u.name,
+          actorRole: "SUPER_ADMIN",
+          type: "ROLE_PERMISSIONS_UPDATED",
+          occurredAt: new Date().toISOString(),
+          summary: `تعديل صلاحيات الدور ${role}`,
+        });
+        return structuredClone(current);
+      }),
+  },
   inventory: {
     async list() {
       return (await getView()).inventory;

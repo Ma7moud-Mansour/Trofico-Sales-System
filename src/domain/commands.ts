@@ -11,7 +11,7 @@ import {
   type FailedAttemptInput,
   type CancelInput,
 } from "./types";
-import { assert, canActOnOrder, hasRole, shortages } from "./policies";
+import { assert, can, canActOnOrder, hasRole, shortages } from "./policies";
 import { normalizeDigits, orderSchema } from "@/features/orders/schemas";
 export type Command =
   | { type: "saveDraft"; input: SaveDraftInput }
@@ -65,7 +65,7 @@ export function executeCommand(
     });
   if (command.type === "saveDraft") {
     assert(
-      hasRole(actor, "SALES_REP") && (!o || canActOnOrder(actor, o, "edit")),
+      can(actor, "ORDERS_CREATE") && (!o || canActOnOrder(actor, o, "edit")),
       "لا يمكنك تعديل هذا الطلب",
       "FORBIDDEN",
     );

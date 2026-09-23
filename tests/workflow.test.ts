@@ -94,7 +94,9 @@ describe("Workflow and permissions", () => {
     expect(canViewOrder(rep, o)).toBe(true);
     cmd(rep, { type: "submit", id: o.id }, o);
     expect(o.status).toBe("PENDING_FINANCE");
-    for (const u of db.users.slice(2)) expect(canViewOrder(u, o)).toBe(true);
+    for (const u of [manager, warehouse, finance, db.users[5], db.users[8]])
+      expect(canViewOrder(u, o)).toBe(true);
+    expect(canViewOrder(db.users[6], o)).toBe(false);
     expect(canViewOrder(db.users[1], o)).toBe(false);
   });
   it("AC03: complete approval produces FULL without reserving", () => {

@@ -8,8 +8,8 @@ import {
   cookieName,
   cookieOptions,
   digest,
-  requireRole,
 } from "./auth.js";
+import { requirePermission, requireSuperAdmin } from "./permissions.js";
 import {
   loginSchema,
   changeSchema,
@@ -21,7 +21,13 @@ import { readEndpoint } from "./queries.js";
 import { getOrder, camel } from "./repository.js";
 import { rows } from "./db.js";
 import { draft, orderCommand, authorizeCommand } from "./orders.js";
-import { master, resetPassword, stock, reviewStockReceipt } from "./masters.js";
+import {
+  master,
+  resetPassword,
+  stock,
+  reviewStockReceipt,
+  saveRolePermissions,
+} from "./masters.js";
 function stable(x: unknown): string {
   if (x === null || typeof x !== "object") return JSON.stringify(x);
   if (Array.isArray(x)) return "[" + x.map(stable).join(",") + "]";
@@ -78,10 +84,10 @@ export async function handle(req: Request, res: Response, requestId: string) {
         const u = await authenticate(tx, token, path === "auth/me");
         if (path === "auth/me") return u;
         if (path === "health/ready") {
-          requireRole(u, "SUPER_ADMIN");
+          requireSuperAdmin(u);
           const migration = await one(
             tx,
-            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609230001_sales_areas'`,
+            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609240001_role_permissions'`,
           );
           check(migration, 503, "NOT_READY", "الخدمة غير جاهزة");
           return { ready: true };
@@ -131,6 +137,9 @@ export async function handle(req: Request, res: Response, requestId: string) {
     const receiptMatch = path.match(
       /^inventory\/receipts\/([0-9a-f-]{36})\/(approve|reject)$/i,
     );
+    const rolePermissionMatch = path.match(
+      /^role-permissions\/(SALES_REP|SALES_MANAGER|WAREHOUSE_MANAGER|FINANCE|LOGISTICS|DRIVER|SUPER_ADMIN)$/,
+    );
     const prior = await one<{ request_hash: string; response_body: unknown }>(
       tx,
       "SELECT request_hash,response_body FROM idempotency_records WHERE actor_id=$1::uuid AND key=$2 AND expires_at>now()",
@@ -143,7 +152,7 @@ export async function handle(req: Request, res: Response, requestId: string) {
       prior &&
       prior.request_hash === hash
     ) {
-      requireRole(u, "SALES_REP");
+      requirePermission(u, "ORDERS_CREATE");
       const previous = prior.response_body as { createdBy?: string };
       check(
         previous.createdBy === u.id || u.roles.includes("SUPER_ADMIN"),
@@ -162,16 +171,23 @@ export async function handle(req: Request, res: Response, requestId: string) {
         authorizeCommand(u, existingOrder, action, true);
     }
     if (masterMatch)
-      requireRole(
+      requirePermission(
         u,
-        ...(masterMatch[1] === "users" || masterMatch[1] === "areas"
-          ? ["SUPER_ADMIN"]
-          : ["FINANCE"]),
+        masterMatch[1] === "users"
+          ? "USERS_MANAGE"
+          : masterMatch[1] === "areas"
+            ? "AREAS_MANAGE"
+            : masterMatch[1] === "customers"
+              ? "CUSTOMERS_MANAGE"
+              : "PRODUCTS_MANAGE",
       );
-    if (receiptMatch) requireRole(u, "FINANCE");
-    else if (path === "inventory/receipts") requireRole(u, "WAREHOUSE_MANAGER");
-    else if (path.startsWith("inventory/")) requireRole(u, "SUPER_ADMIN");
-    if (path === "orders") requireRole(u, "SALES_REP");
+    if (rolePermissionMatch) requireSuperAdmin(u);
+    if (receiptMatch) requirePermission(u, "RECEIPTS_APPROVE");
+    else if (path === "inventory/receipts")
+      requirePermission(u, "INVENTORY_RECEIVE");
+    else if (path.startsWith("inventory/"))
+      requirePermission(u, "STOCK_ADJUST");
+    if (path === "orders") requirePermission(u, "ORDERS_CREATE");
     if (prior) {
       check(
         prior.request_hash === hash,
@@ -239,6 +255,14 @@ export async function handle(req: Request, res: Response, requestId: string) {
           requestId,
         );
       } else throw new ApiError(404, "NOT_FOUND", "المسار غير موجود");
+    } else if (rolePermissionMatch && req.method === "PATCH") {
+      result = await saveRolePermissions(
+        tx,
+        u,
+        rolePermissionMatch[1],
+        req.body,
+        requestId,
+      );
     } else if (receiptMatch && req.method === "POST") {
       result = await reviewStockReceipt(
         tx,

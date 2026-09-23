@@ -15,6 +15,9 @@ import type {
   Customer,
   Product,
   Area,
+  RolePermissionSet,
+  Role,
+  Permission,
 } from "@/domain/types";
 export interface OrdersService {
   list(filters: OrderFilters): Promise<Page<Order>>;
@@ -70,6 +73,13 @@ export interface Services {
   customers: MasterService<Customer>;
   products: MasterService<Product>;
   areas: MasterService<Area>;
+  permissions: {
+    save(
+      role: Role,
+      permissions: Permission[],
+      expectedVersion: number,
+    ): Promise<RolePermissionSet>;
+  };
   inventory: { list(): Promise<ViewData["inventory"]> };
   activity: { list(): Promise<ViewData["activity"]> };
 }

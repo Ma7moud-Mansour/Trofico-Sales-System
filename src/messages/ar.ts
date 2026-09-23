@@ -55,6 +55,7 @@ export const eventLabels: Record<string, string> = {
   STOCK_RECEIPT_REQUEST: "تسجيل وارد",
   STOCK_RECEIPT_APPROVED: "اعتماد وارد",
   STOCK_RECEIPT_REJECTED: "رفض وارد",
+  ROLE_PERMISSIONS_UPDATED: "تعديل صلاحيات دور",
   MASTER: "تعديل البيانات الأساسية",
 };
 export const ar = {

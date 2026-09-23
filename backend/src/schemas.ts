@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { permissionValues } from "./permissions.js";
 export const roles = [
   "SALES_REP",
   "SALES_MANAGER",
@@ -174,6 +175,15 @@ export const areaSchema = z
     name: text,
     active: z.boolean(),
     expectedVersion: version.optional(),
+  })
+  .strict();
+export const rolePermissionSchema = z
+  .object({
+    permissions: z
+      .array(z.enum(permissionValues))
+      .max(permissionValues.length)
+      .refine((x) => new Set(x).size === x.length),
+    expectedVersion: version,
   })
   .strict();
 export const stockSchema = z

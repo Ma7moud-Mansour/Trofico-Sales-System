@@ -1,12 +1,12 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { type Tx, rows, one, write, check, MAIN } from "./db.js";
+import { type Actor, hashPassword, getActor, revoke } from "./auth.js";
 import {
-  type Actor,
-  requireRole,
-  hashPassword,
-  getActor,
-  revoke,
-} from "./auth.js";
+  type Permission,
+  normalizePermissions,
+  requirePermission,
+  requireSuperAdmin,
+} from "./permissions.js";
 import { event, expected, balance, movement, camel } from "./repository.js";
 import {
   customerSchema,
@@ -15,6 +15,8 @@ import {
   areaSchema,
   stockSchema,
   stockReceiptReviewSchema,
+  rolePermissionSchema,
+  roles,
 } from "./schemas.js";
 import { customerDto, productDto } from "./orders.js";
 export async function master(
@@ -25,9 +27,15 @@ export async function master(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(
+  requirePermission(
     u,
-    ...(kind === "users" || kind === "areas" ? ["SUPER_ADMIN"] : ["FINANCE"]),
+    kind === "users"
+      ? "USERS_MANAGE"
+      : kind === "areas"
+        ? "AREAS_MANAGE"
+        : kind === "customers"
+          ? "CUSTOMERS_MANAGE"
+          : "PRODUCTS_MANAGE",
   );
   const p = (
     kind === "users"
@@ -40,6 +48,13 @@ export async function master(
   ).parse(input) as Record<string, unknown>;
   if (kind === "users") {
     const roles = p.roles as string[];
+    if (!u.roles.includes("SUPER_ADMIN"))
+      check(
+        !roles.includes("SUPER_ADMIN"),
+        403,
+        "FORBIDDEN",
+        "لا يمكنك منح دور مدير النظام",
+      );
     if (!roles.includes("SALES_REP")) p.areaIds = [];
     const areaIds = p.areaIds as string[];
     if (areaIds.length) {
@@ -73,6 +88,13 @@ export async function master(
         "لا يمكنك تعطيل حسابك الحالي",
       );
       const before = await getActor(tx, id);
+      if (!u.roles.includes("SUPER_ADMIN"))
+        check(
+          !before!.roles.includes("SUPER_ADMIN"),
+          403,
+          "FORBIDDEN",
+          "لا يمكنك تعديل حساب مدير النظام",
+        );
       if (
         before!.roles.includes("SUPER_ADMIN") &&
         (!p.active || !roles.includes("SUPER_ADMIN"))
@@ -240,6 +262,68 @@ export function areaDto(row: Record<string, unknown>) {
     version: row.version,
   };
 }
+export async function rolePermissions(tx: Tx) {
+  return rows(
+    tx,
+    "SELECT role,permissions,version FROM role_permission_sets ORDER BY role",
+  );
+}
+export async function saveRolePermissions(
+  tx: Tx,
+  u: Actor,
+  role: string,
+  input: unknown,
+  requestId: string,
+) {
+  requireSuperAdmin(u);
+  check(
+    (roles as readonly string[]).includes(role),
+    404,
+    "NOT_FOUND",
+    "الدور غير موجود",
+  );
+  check(
+    role !== "SUPER_ADMIN",
+    400,
+    "VALIDATION_ERROR",
+    "صلاحيات مدير النظام كاملة وثابتة",
+  );
+  const p = rolePermissionSchema.parse(input);
+  const current = await one<{
+    permissions: Permission[];
+    version: number;
+  }>(
+    tx,
+    "SELECT permissions,version FROM role_permission_sets WHERE role=$1 FOR UPDATE",
+    role,
+  );
+  check(current, 404, "NOT_FOUND", "الدور غير موجود");
+  expected(current.version, p.expectedVersion);
+  const permissions = normalizePermissions(p.permissions);
+  const updated = await one(
+    tx,
+    `UPDATE role_permission_sets
+       SET permissions=$2::text[],version=version+1,updated_at=now()
+       WHERE role=$1
+       RETURNING role,permissions,version`,
+    role,
+    permissions,
+  );
+  await event(
+    tx,
+    u,
+    "ROLE_PERMISSIONS_UPDATED",
+    `تعديل صلاحيات الدور ${role}`,
+    requestId,
+    undefined,
+    JSON.stringify({
+      role,
+      before: current.permissions,
+      after: permissions,
+    }),
+  );
+  return updated;
+}
 export async function resetPassword(
   tx: Tx,
   u: Actor,
@@ -247,9 +331,16 @@ export async function resetPassword(
   version: number,
   requestId: string,
 ) {
-  requireRole(u, "SUPER_ADMIN");
+  requirePermission(u, "USERS_MANAGE");
   const target = await getActor(tx, id);
   check(target, 404, "NOT_FOUND", "المستخدم غير موجود");
+  if (!u.roles.includes("SUPER_ADMIN"))
+    check(
+      !target.roles.includes("SUPER_ADMIN"),
+      403,
+      "FORBIDDEN",
+      "لا يمكنك تعديل حساب مدير النظام",
+    );
   expected(target.version, version);
   const temporaryPassword = randomBytes(18).toString("base64url");
   await write(
@@ -277,9 +368,9 @@ export async function stock(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(
+  requirePermission(
     u,
-    ...(type === "receipts" ? ["WAREHOUSE_MANAGER"] : ["SUPER_ADMIN"]),
+    type === "receipts" ? "INVENTORY_RECEIVE" : "STOCK_ADJUST",
   );
   const p = stockSchema.parse(input);
   const product = await one(
@@ -367,7 +458,7 @@ export async function reviewStockReceipt(
   input: unknown,
   requestId: string,
 ) {
-  requireRole(u, "FINANCE");
+  requirePermission(u, "RECEIPTS_APPROVE");
   const p = stockReceiptReviewSchema.parse(input);
   const receipt = await one(
     tx,

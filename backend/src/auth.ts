@@ -9,12 +9,14 @@ import {
   check,
   config,
 } from "./db.js";
+import { permissionValues } from "./permissions.js";
 export type Actor = {
   id: string;
   name: string;
   username: string;
   active: boolean;
   roles: string[];
+  permissions: string[];
   areaIds: string[];
   version: number;
   mustChangePassword: boolean;
@@ -37,14 +39,24 @@ export const cookieOptions = {
   path: "/",
 };
 export async function getActor(tx: Tx, id: string) {
-  return one<Actor>(
+  const actor = await one<Actor>(
     tx,
     `SELECT u.id,u.name,u.username,u.active,u.version,u.must_change_password AS "mustChangePassword",
       coalesce((SELECT array_agg(r.role ORDER BY r.role) FROM user_roles r WHERE r.user_id=u.id),'{}') AS roles,
+      coalesce((
+        SELECT array_agg(DISTINCT permission ORDER BY permission)
+        FROM user_roles r
+        JOIN role_permission_sets s ON s.role=r.role
+        CROSS JOIN LATERAL unnest(s.permissions) permission
+        WHERE r.user_id=u.id
+      ),'{}') AS permissions,
       coalesce((SELECT array_agg(a.area_id::text ORDER BY a.area_id) FROM user_areas a WHERE a.user_id=u.id),'{}') AS "areaIds"
      FROM users u WHERE u.id=$1::uuid`,
     id,
   );
+  if (actor?.roles.includes("SUPER_ADMIN"))
+    actor.permissions = [...permissionValues];
+  return actor;
 }
 export function requireRole(u: Actor, ...roles: string[]) {
   check(

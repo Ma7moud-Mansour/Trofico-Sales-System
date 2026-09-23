@@ -8,6 +8,30 @@ export const roles = [
   "SUPER_ADMIN",
 ] as const;
 export type Role = (typeof roles)[number];
+export const permissions = [
+  "ORDERS_VIEW",
+  "ORDERS_CREATE",
+  "FINANCE_RECOMMEND",
+  "MANAGER_DECIDE",
+  "WAREHOUSE_PREPARE",
+  "LOGISTICS_VIEW",
+  "DELIVERY_CONFIRM",
+  "INVENTORY_VIEW",
+  "INVENTORY_RECEIVE",
+  "RECEIPTS_APPROVE",
+  "CUSTOMERS_MANAGE",
+  "PRODUCTS_MANAGE",
+  "STOCK_ADJUST",
+  "USERS_MANAGE",
+  "AREAS_MANAGE",
+  "ACTIVITY_VIEW",
+] as const;
+export type Permission = (typeof permissions)[number];
+export interface RolePermissionSet {
+  role: Role;
+  permissions: Permission[];
+  version: number;
+}
 export const statuses = [
   "DRAFT",
   "PENDING_FINANCE",
@@ -29,6 +53,7 @@ export interface User {
   name: string;
   username: string;
   roles: Role[];
+  permissions: Permission[];
   areaIds: string[];
   active: boolean;
 }
@@ -155,6 +180,7 @@ export interface Database {
   orderSequence: number;
   referenceTime: string;
   users: User[];
+  rolePermissions: RolePermissionSet[];
   areas: Area[];
   customers: Customer[];
   products: Product[];
@@ -243,6 +269,7 @@ export type Page<T> = {
 export interface ViewData {
   user: User;
   users: User[];
+  rolePermissions: RolePermissionSet[];
   areas: Area[];
   customers: Customer[];
   products: Product[];

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useCommand } from "@/features/orders/hooks";
 import { request } from "@/services/http";
-import { hasRole } from "@/domain/policies";
+import { can } from "@/domain/policies";
 import { type StockReceipt } from "@/domain/types";
 import { formatDate } from "@/messages/ar";
 
@@ -77,7 +77,7 @@ export function StockOperations() {
             <h2>طلبات الوارد</h2>
             <p>يسجل أمين المخزن الوارد، ولا يضاف للرصيد قبل موافقة الحسابات.</p>
           </div>
-          {hasRole(data.user, "WAREHOUSE_MANAGER") && (
+          {can(data.user, "INVENTORY_RECEIVE") && (
             <Button
               onClick={() => {
                 mutation.reset();
@@ -123,7 +123,7 @@ export function StockOperations() {
                   </td>
                   <td>
                     {r.status === "PENDING_FINANCE" &&
-                    hasRole(data.user, "FINANCE") ? (
+                    can(data.user, "RECEIPTS_APPROVE") ? (
                       <div className="button-row">
                         <Button
                           onClick={() => {

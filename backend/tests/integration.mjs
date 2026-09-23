@@ -267,10 +267,10 @@ test("B04 B05 scope on drafts, submitted orders, counts and every department", a
     "WAREHOUSE_MANAGER",
     "FINANCE",
     "LOGISTICS",
-    "DRIVER",
     "SUPER_ADMIN",
   ])
     assert.equal((await clients[role].ok("orders/" + o.id)).id, o.id);
+  assert.equal((await clients.DRIVER.call("orders/" + o.id)).status, 404);
 });
 test("B06 B07 B08 B14 atomic decisions, transition and stale version", async () => {
   let o = await make(2, products[0], [
@@ -455,7 +455,7 @@ test("B15 B18 B20 complete stock lifecycle; failure then delivery without extra 
         expectedVersion: o.version,
       })
     ).status,
-    403,
+    404,
   );
   o = await wh().ok(`orders/${o.id}/dispatch`, "POST", {
     expectedVersion: o.version,
@@ -800,6 +800,60 @@ test("sales areas restrict representatives while administrators manage areas and
   });
   assert.equal((await admin().ok("auth/me")).id, self.id);
   assert.equal((await admin().call("users")).status, 200);
+});
+test("CEO edits role permissions and changes apply to active sessions immediately", async () => {
+  const sets = await admin().ok("role-permissions");
+  assert.equal(sets.length, 7);
+  const original = sets.find((set) => set.role === "SALES_REP");
+  assert.ok(original.permissions.includes("ORDERS_CREATE"));
+
+  const restricted = await admin().ok("role-permissions/SALES_REP", "PATCH", {
+    permissions: original.permissions.filter(
+      (permission) => permission !== "ORDERS_CREATE",
+    ),
+    expectedVersion: original.version,
+  });
+  assert.equal(restricted.version, original.version + 1);
+  assert.ok(!(await rep().ok("auth/me")).permissions.includes("ORDERS_CREATE"));
+  assert.equal(
+    (
+      await rep().call("orders", "POST", {
+        customerId: "",
+        deliveryAddress: "",
+        items: [],
+      })
+    ).status,
+    403,
+  );
+
+  const restored = await admin().ok("role-permissions/SALES_REP", "PATCH", {
+    permissions: original.permissions,
+    expectedVersion: restricted.version,
+  });
+  assert.ok((await rep().ok("auth/me")).permissions.includes("ORDERS_CREATE"));
+  assert.equal(
+    (
+      await fin().call("role-permissions/SALES_REP", "PATCH", {
+        permissions: restored.permissions,
+        expectedVersion: restored.version,
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await admin().call("role-permissions/SUPER_ADMIN", "PATCH", {
+        permissions: [],
+        expectedVersion: sets.find((set) => set.role === "SUPER_ADMIN").version,
+      })
+    ).status,
+    400,
+  );
+  assert.ok(
+    (await admin().ok("activity")).some(
+      (event) => event.type === "ROLE_PERMISSIONS_UPDATED",
+    ),
+  );
 });
 test("B22 competing removal of two administrators preserves last active admin", async () => {
   const second = await admin().ok("users", "POST", {

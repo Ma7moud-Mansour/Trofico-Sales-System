@@ -1,8 +1,14 @@
 import { type Tx, rows } from "./db.js";
-import { type Actor, getActor, requireRole } from "./auth.js";
-import { scope, orderDto, camel, has, listOrders } from "./repository.js";
+import { type Actor, getActor } from "./auth.js";
+import { scope, orderDto, camel, listOrders } from "./repository.js";
+import {
+  hasPermission,
+  requirePermission,
+  requireSuperAdmin,
+} from "./permissions.js";
 import { customerDto, productDto } from "./orders.js";
-import { areaDto } from "./masters.js";
+import { areaDto, rolePermissions } from "./masters.js";
+
 export async function workspace(tx: Tx, u: Actor) {
   const s = scope(u);
   const orders = await rows(
@@ -11,24 +17,30 @@ export async function workspace(tx: Tx, u: Actor) {
     ...s.args,
   );
   const related = `SELECT o.id FROM orders o WHERE ${s.sql}`;
-  const users = has(u, "SUPER_ADMIN")
+  const users = hasPermission(u, "USERS_MANAGE")
     ? await Promise.all(
         (await rows(tx, "SELECT id FROM users ORDER BY name")).map((r) =>
           getActor(tx, String(r.id)),
         ),
       )
-    : has(u, "WAREHOUSE_MANAGER")
-      ? await rows(
-          tx,
-          `SELECT u.id,u.name,u.username,u.active,u.version,ARRAY['DRIVER']::text[] AS roles,ARRAY[]::text[] AS "areaIds" FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER')`,
+    : hasPermission(u, "WAREHOUSE_PREPARE")
+      ? await Promise.all(
+          (
+            await rows(
+              tx,
+              `SELECT u.id FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER') ORDER BY u.name,u.id`,
+            )
+          ).map((r) => getActor(tx, String(r.id))),
         )
       : [u];
+  const managesCustomers = hasPermission(u, "CUSTOMERS_MANAGE");
+  const managesAreas = hasPermission(u, "AREAS_MANAGE");
   return {
     user: u,
     users,
     orders: await Promise.all(orders.map((o) => orderDto(tx, o))),
-    customers: has(u, "SALES_REP", "FINANCE")
-      ? (u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
+    customers: hasPermission(u, "ORDERS_CREATE", "CUSTOMERS_MANAGE")
+      ? (managesCustomers
           ? await rows(tx, "SELECT * FROM customers ORDER BY name")
           : await rows(
               tx,
@@ -40,33 +52,31 @@ export async function workspace(tx: Tx, u: Actor) {
             )
         ).map(customerDto)
       : [],
-    areas: has(u, "SALES_REP", "FINANCE")
+    areas: hasPermission(u, "ORDERS_CREATE", "CUSTOMERS_MANAGE", "AREAS_MANAGE")
       ? (
           await rows(
             tx,
-            u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
+            managesCustomers || managesAreas
               ? "SELECT * FROM areas ORDER BY name"
               : `SELECT a.* FROM areas a
                    WHERE a.active AND EXISTS(
                      SELECT 1 FROM user_areas ua WHERE ua.user_id=$1::uuid AND ua.area_id=a.id
                    ) ORDER BY a.name`,
-            ...(u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
-              ? []
-              : [u.id]),
+            ...(managesCustomers || managesAreas ? [] : [u.id]),
           )
         ).map(areaDto)
       : [],
-    products: has(
+    products: hasPermission(
       u,
-      "SALES_REP",
-      "SUPER_ADMIN",
-      "FINANCE",
-      "WAREHOUSE_MANAGER",
-      "SALES_MANAGER",
+      "ORDERS_CREATE",
+      "PRODUCTS_MANAGE",
+      "INVENTORY_VIEW",
+      "INVENTORY_RECEIVE",
+      "WAREHOUSE_PREPARE",
     )
       ? (await rows(tx, "SELECT * FROM products ORDER BY name")).map(productDto)
       : [],
-    inventory: has(u, "SALES_MANAGER", "WAREHOUSE_MANAGER", "FINANCE")
+    inventory: hasPermission(u, "INVENTORY_VIEW")
       ? (
           await rows(
             tx,
@@ -74,7 +84,7 @@ export async function workspace(tx: Tx, u: Actor) {
           )
         ).map(camel)
       : [],
-    stockReceipts: has(u, "WAREHOUSE_MANAGER", "FINANCE")
+    stockReceipts: hasPermission(u, "INVENTORY_RECEIVE", "RECEIPTS_APPROVE")
       ? (
           await rows(
             tx,
@@ -99,12 +109,16 @@ export async function workspace(tx: Tx, u: Actor) {
     activity: (
       await rows(
         tx,
-        `SELECT * FROM activity_events WHERE ${has(u, "SUPER_ADMIN") ? `((order_id IS NULL AND type NOT IN ('DRAFT','DELETE_DRAFT')) OR order_id IN (${related}))` : `order_id IN (${related})`} ORDER BY occurred_at,id`,
+        `SELECT * FROM activity_events WHERE ${hasPermission(u, "ACTIVITY_VIEW") ? `((order_id IS NULL AND type NOT IN ('DRAFT','DELETE_DRAFT')) OR order_id IN (${related}))` : `order_id IN (${related})`} ORDER BY occurred_at,id`,
         ...s.args,
       )
     ).map(camel),
+    rolePermissions: u.roles.includes("SUPER_ADMIN")
+      ? await rolePermissions(tx)
+      : [],
   };
 }
+
 export async function readEndpoint(
   tx: Tx,
   u: Actor,
@@ -112,7 +126,10 @@ export async function readEndpoint(
   query: Record<string, unknown>,
 ) {
   if (path === "workspace") return workspace(tx, u);
-  if (path === "orders") return listOrders(tx, u, query);
+  if (path === "orders") {
+    requirePermission(u, "ORDERS_VIEW");
+    return listOrders(tx, u, query);
+  }
   if (path === "dashboard") {
     const data = await workspace(tx, u);
     return {
@@ -127,25 +144,42 @@ export async function readEndpoint(
           "DELIVERED",
           "REJECTED",
           "CANCELLED",
-        ].map((s) => [s, data.orders.filter((o) => o.status === s).length]),
+        ].map((status) => [
+          status,
+          data.orders.filter((order) => order.status === status).length,
+        ]),
       ),
       required: await listOrders(tx, u, { tab: "mine", pageSize: 5 }),
       activity: data.activity.slice(-5),
     };
   }
   if (["users", "customers", "products", "areas"].includes(path)) {
-    requireRole(
+    requirePermission(
       u,
-      ...(path === "users" || path === "areas" ? ["SUPER_ADMIN"] : ["FINANCE"]),
+      path === "users"
+        ? "USERS_MANAGE"
+        : path === "areas"
+          ? "AREAS_MANAGE"
+          : path === "customers"
+            ? "CUSTOMERS_MANAGE"
+            : "PRODUCTS_MANAGE",
     );
     const data = await workspace(tx, u);
     return data[path as "users" | "customers" | "products" | "areas"];
   }
+  if (path === "role-permissions") {
+    requireSuperAdmin(u);
+    return rolePermissions(tx);
+  }
   if (path === "lookups/customers" || path === "lookups/products") {
-    requireRole(u, "SALES_REP", "FINANCE");
+    requirePermission(
+      u,
+      "ORDERS_CREATE",
+      path.endsWith("customers") ? "CUSTOMERS_MANAGE" : "PRODUCTS_MANAGE",
+    );
     if (path.endsWith("customers"))
       return (
-        u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
+        hasPermission(u, "CUSTOMERS_MANAGE")
           ? await rows(tx, "SELECT * FROM customers WHERE active ORDER BY name")
           : await rows(
               tx,
@@ -160,14 +194,18 @@ export async function readEndpoint(
     ).map(productDto);
   }
   if (path === "lookups/drivers") {
-    requireRole(u, "WAREHOUSE_MANAGER");
-    return rows(
-      tx,
-      `SELECT u.id,u.name,u.active,ARRAY['DRIVER']::text[] roles,ARRAY[]::text[] AS "areaIds" FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER') ORDER BY u.name,u.id`,
+    requirePermission(u, "WAREHOUSE_PREPARE");
+    return Promise.all(
+      (
+        await rows(
+          tx,
+          `SELECT u.id FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER') ORDER BY u.name,u.id`,
+        )
+      ).map((row) => getActor(tx, String(row.id))),
     );
   }
   if (path === "inventory/balances") {
-    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE");
+    requirePermission(u, "INVENTORY_VIEW");
     return (
       await rows(
         tx,
@@ -176,7 +214,7 @@ export async function readEndpoint(
     ).map(camel);
   }
   if (path === "inventory/movements") {
-    requireRole(u, "WAREHOUSE_MANAGER", "SALES_MANAGER", "FINANCE");
+    requirePermission(u, "INVENTORY_VIEW");
     return (
       await rows(
         tx,
@@ -185,7 +223,7 @@ export async function readEndpoint(
     ).map(camel);
   }
   if (path === "inventory/receipts") {
-    requireRole(u, "WAREHOUSE_MANAGER", "FINANCE");
+    requirePermission(u, "INVENTORY_RECEIVE", "RECEIPTS_APPROVE");
     return (
       await rows(
         tx,
@@ -194,7 +232,7 @@ export async function readEndpoint(
     ).map(camel);
   }
   if (path === "activity") {
-    requireRole(u, "SUPER_ADMIN");
+    requirePermission(u, "ACTIVITY_VIEW");
     const s = scope(u);
     return (
       await rows(
