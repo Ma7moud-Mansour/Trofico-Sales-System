@@ -32,6 +32,7 @@ import {
   FlaskConical,
   PackageCheck,
   Search,
+  MapPinned,
 } from "lucide-react";
 import { services, subscribe, demo, mockEnabled } from "@/services";
 import { hasRole, routeRoles, needsAction } from "@/domain/policies";
@@ -52,6 +53,7 @@ const nav = [
   ["/logistics", "الحركة والتوصيل", Truck],
   ["/my-deliveries", "توصيلاتي", Truck],
   ["/customers", "العملاء", ContactRound],
+  ["/areas", "المناطق", MapPinned],
   ["/products", "المنتجات", PackageCheck],
   ["/users", "المستخدمون", Users],
   ["/activity", "سجل العمليات", History],
@@ -631,7 +633,7 @@ function Shell({ children }: { children: ReactNode }) {
                     ).value,
                     1000,
                   );
-                  toast("تمت إضافة 1000 كرتونة تجريبية");
+                  toast("تمت إضافة 1000 عبوة تجريبية");
                 } catch (e) {
                   toast((e as Error).message);
                 }

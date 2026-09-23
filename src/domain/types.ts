@@ -29,6 +29,13 @@ export interface User {
   name: string;
   username: string;
   roles: Role[];
+  areaIds: string[];
+  active: boolean;
+}
+export interface Area {
+  version?: number;
+  id: string;
+  name: string;
   active: boolean;
 }
 export interface Customer {
@@ -38,6 +45,7 @@ export interface Customer {
   name: string;
   phone: string;
   defaultAddress: string;
+  areaId: string;
   active: boolean;
 }
 export interface Product {
@@ -147,6 +155,7 @@ export interface Database {
   orderSequence: number;
   referenceTime: string;
   users: User[];
+  areas: Area[];
   customers: Customer[];
   products: Product[];
   orders: Order[];
@@ -234,6 +243,7 @@ export type Page<T> = {
 export interface ViewData {
   user: User;
   users: User[];
+  areas: Area[];
   customers: Customer[];
   products: Product[];
   orders: Order[];

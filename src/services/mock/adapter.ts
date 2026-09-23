@@ -56,6 +56,15 @@ function read(): Database {
         "STORAGE_ERROR",
       );
       parsed.stockReceipts ??= [];
+      const defaults = createSeed();
+      parsed.areas ??= defaults.areas;
+      for (const [index, user] of (parsed.users ?? []).entries())
+        user.areaIds ??= user.roles.includes("SALES_REP")
+          ? [parsed.areas[index % parsed.areas.length].id]
+          : [];
+      for (const [index, customer] of (parsed.customers ?? []).entries())
+        customer.areaId ??= parsed.areas[index % parsed.areas.length].id;
+      for (const product of parsed.products ?? []) product.unit = "عبوة";
       for (const order of parsed.orders ?? [])
         if (order.status === "PENDING_APPROVAL")
           order.status = "PENDING_FINANCE";
@@ -126,7 +135,22 @@ function view(db: Database, u: User): ViewData {
     user: u,
     orders,
     users: db.users,
-    customers: hasRole(u, "SALES_REP", "FINANCE") ? db.customers : [],
+    areas:
+      u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
+        ? db.areas
+        : u.roles.includes("SALES_REP")
+          ? db.areas.filter(
+              (area) => area.active && u.areaIds.includes(area.id),
+            )
+          : [],
+    customers:
+      u.roles.includes("SUPER_ADMIN") || u.roles.includes("FINANCE")
+        ? db.customers
+        : u.roles.includes("SALES_REP")
+          ? db.customers.filter((customer) =>
+              u.areaIds.includes(customer.areaId),
+            )
+          : [],
     products: hasRole(
       u,
       "SALES_REP",
@@ -157,8 +181,10 @@ async function getView() {
 async function saveMaster(kind: MasterKind, input: MasterRecord) {
   return transaction((db, u) => {
     assert(
-      kind === "users" ? hasRole(u, "SUPER_ADMIN") : hasRole(u, "FINANCE"),
-      kind === "users"
+      kind === "users" || kind === "areas"
+        ? hasRole(u, "SUPER_ADMIN")
+        : hasRole(u, "FINANCE"),
+      kind === "users" || kind === "areas"
         ? "هذه العملية متاحة للإدارة العليا فقط"
         : "هذه العملية متاحة للحسابات فقط",
       "FORBIDDEN",
@@ -167,7 +193,13 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
     const records = db[kind] as MasterRecord[];
     const old = records.find((r) => r.id === input.id);
     const unique =
-      "username" in input ? "username" : "sku" in input ? "sku" : "code";
+      "username" in input
+        ? "username"
+        : "sku" in input
+          ? "sku"
+          : "code" in input
+            ? "code"
+            : "name";
     const value = Reflect.get(input, unique) as string;
     assert(value?.trim(), "الكود أو اسم الدخول مطلوب");
     assert(
@@ -180,6 +212,18 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
     );
     if (kind === "users" && "roles" in input) {
       assert(input.roles.length > 0, "اختر دورًا واحدًا على الأقل");
+      input.areaIds ??= [];
+      if (!input.roles.includes("SALES_REP")) input.areaIds = [];
+      assert(
+        !input.roles.includes("SALES_REP") || input.areaIds.length > 0,
+        "اختر منطقة واحدة على الأقل لمندوب المبيعات",
+      );
+      assert(
+        input.areaIds.every((id) =>
+          db.areas.some((area) => area.id === id && area.active),
+        ),
+        "اختر مناطق نشطة وصحيحة للمندوب",
+      );
       assert(input.id !== u.id || input.active, "لا يمكنك تعطيل حسابك الحالي");
       const prior = old as User | undefined;
       if (
@@ -199,7 +243,31 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
           "السائق لديه طلب قيد التوصيل؛ أكمل الطلب أولًا",
         );
     }
-    const record = { ...input, id: input.id || crypto.randomUUID() };
+    if (kind === "customers" && "areaId" in input)
+      assert(
+        db.areas.some(
+          (area) => area.id === input.areaId && (area.active || !input.active),
+        ),
+        "اختر منطقة نشطة للعميل",
+      );
+    if (kind === "areas" && !input.active)
+      assert(
+        !db.customers.some(
+          (customer) => customer.active && customer.areaId === input.id,
+        ) &&
+          !db.users.some(
+            (user) =>
+              user.active &&
+              user.roles.includes("SALES_REP") &&
+              user.areaIds.includes(input.id),
+          ),
+        "انقل العملاء والمندوبين من المنطقة قبل تعطيلها",
+      );
+    const record = {
+      ...input,
+      ...(kind === "products" ? { unit: "عبوة" } : {}),
+      id: input.id || crypto.randomUUID(),
+    };
     const index = records.findIndex((r) => r.id === record.id);
     if (index >= 0) records[index] = record;
     else records.push(record);
@@ -297,6 +365,7 @@ export const services: Services = {
   users: { save: (input) => saveMaster("users", input) },
   customers: { save: (input) => saveMaster("customers", input) },
   products: { save: (input) => saveMaster("products", input) },
+  areas: { save: (input) => saveMaster("areas", input) },
   inventory: {
     async list() {
       return (await getView()).inventory;

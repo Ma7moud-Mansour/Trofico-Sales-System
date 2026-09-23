@@ -14,6 +14,7 @@ import type {
   User,
   Customer,
   Product,
+  Area,
 } from "@/domain/types";
 export interface OrdersService {
   list(filters: OrderFilters): Promise<Page<Order>>;
@@ -51,8 +52,8 @@ export interface OrdersService {
   ): Promise<Order>;
   deleteDraft(id: string, meta: MutationMeta): Promise<Order>;
 }
-export type MasterKind = "users" | "customers" | "products";
-export type MasterRecord = User | Customer | Product;
+export type MasterKind = "users" | "customers" | "products" | "areas";
+export type MasterRecord = User | Customer | Product | Area;
 export interface MasterService<T> {
   save(input: T): Promise<void>;
 }
@@ -68,6 +69,7 @@ export interface Services {
   users: MasterService<User>;
   customers: MasterService<Customer>;
   products: MasterService<Product>;
+  areas: MasterService<Area>;
   inventory: { list(): Promise<ViewData["inventory"]> };
   activity: { list(): Promise<ViewData["activity"]> };
 }

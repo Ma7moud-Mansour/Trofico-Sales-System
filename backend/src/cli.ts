@@ -117,6 +117,12 @@ async function run() {
           hash,
         );
         await write(tx, "INSERT INTO user_roles VALUES($1::uuid,$2)", id, role);
+        if (role === "SALES_REP")
+          await write(
+            tx,
+            "INSERT INTO user_areas(user_id,area_id) VALUES($1::uuid,'10000000-0000-4000-8000-000000000006'::uuid)",
+            id,
+          );
         accounts.push({ id, username, password, role });
       }
       const second = randomUUID();
@@ -129,6 +135,11 @@ async function run() {
       await write(
         tx,
         "INSERT INTO user_roles VALUES($1::uuid,'SALES_REP')",
+        second,
+      );
+      await write(
+        tx,
+        "INSERT INTO user_areas(user_id,area_id) VALUES($1::uuid,'10000000-0000-4000-8000-000000000006'::uuid)",
         second,
       );
       accounts.push({ id: second, username: "rep2", password, role: "REP2" });
@@ -152,7 +163,7 @@ async function run() {
       });
       await write(
         tx,
-        "INSERT INTO customers VALUES($1::uuid,'C-001','c-001','شركة النور','01000000000','مدينة نصر — القاهرة',true,1)",
+        "INSERT INTO customers(id,code,code_normalized,name,phone,default_address,area_id,active,version) VALUES($1::uuid,'C-001','c-001','شركة النور','01000000000','مدينة نصر — القاهرة','10000000-0000-4000-8000-000000000006'::uuid,true,1)",
         randomUUID(),
       );
       const admin = await getActor(
@@ -172,7 +183,7 @@ async function run() {
           sku,
           sku.toLowerCase(),
           name,
-          "كرتونة",
+          "عبوة",
         );
         const b = await balance(tx, id);
         await movement(

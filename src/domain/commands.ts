@@ -77,7 +77,13 @@ export function executeCommand(
       "الصنف موجود بالفعل",
     );
     const customer = db.customers.find((c) => c.id === input.customerId);
-    if (input.customerId) assert(customer?.active, "اختر عميلًا نشطًا");
+    if (input.customerId)
+      assert(
+        customer?.active &&
+          (actor.roles.includes("SUPER_ADMIN") ||
+            actor.areaIds.includes(customer.areaId)),
+        "اختر عميلًا نشطًا من المناطق المخصصة لك",
+      );
     const items = selected.map((i) => {
       const product = db.products.find((p) => p.id === i.productId);
       assert(product?.active, "اختر صنفًا نشطًا");
@@ -148,7 +154,13 @@ export function executeCommand(
         });
         assert(validation.success, "راجع العميل والعنوان وكميات الأصناف");
         assert(
-          db.customers.some((c) => c.id === o!.customerId && c.active) &&
+          db.customers.some(
+            (c) =>
+              c.id === o!.customerId &&
+              c.active &&
+              (actor.roles.includes("SUPER_ADMIN") ||
+                actor.areaIds.includes(c.areaId)),
+          ) &&
             o.items.every((i) =>
               db.products.some((p) => p.id === i.productId && p.active),
             ),

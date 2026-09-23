@@ -45,10 +45,22 @@ export async function draft(
   if (p.customerId) {
     customer = await one(
       tx,
-      "SELECT * FROM customers WHERE id=$1::uuid AND active",
+      `SELECT c.* FROM customers c
+       WHERE c.id=$1::uuid AND c.active AND (
+         $2::boolean OR EXISTS(
+           SELECT 1 FROM user_areas ua WHERE ua.user_id=$3::uuid AND ua.area_id=c.area_id
+         )
+       )`,
       p.customerId,
+      u.roles.includes("SUPER_ADMIN"),
+      u.id,
     );
-    check(customer, 400, "VALIDATION_ERROR", "اختر عميلًا نشطًا");
+    check(
+      customer,
+      400,
+      "VALIDATION_ERROR",
+      "اختر عميلًا نشطًا من المناطق المخصصة لك",
+    );
   }
   const products: Row[] = [];
   for (const i of p.items) {
@@ -104,6 +116,7 @@ export function customerDto(c: Row) {
     name: c.name,
     phone: c.phone,
     defaultAddress: c.default_address,
+    areaId: c.area_id,
     active: c.active,
     version: c.version,
   };

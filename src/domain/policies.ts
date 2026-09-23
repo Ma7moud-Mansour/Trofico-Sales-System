@@ -123,6 +123,7 @@ export const routeRoles: Record<string, Role[]> = {
   "/my-deliveries": ["DRIVER"],
   "/finance": ["FINANCE"],
   "/customers": ["FINANCE"],
+  "/areas": ["SUPER_ADMIN"],
   "/products": ["FINANCE"],
   "/users": ["SUPER_ADMIN"],
   "/activity": ["SUPER_ADMIN"],

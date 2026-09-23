@@ -75,7 +75,7 @@ class Client {
   }
 }
 const clients = {};
-let customer, products;
+let customer, products, areas;
 before(async () => {
   for (const a of accounts) {
     clients[a.role] = new Client(a);
@@ -86,6 +86,7 @@ before(async () => {
   products = w.products.filter((p) =>
     ["MAN-01", "ORG-01", "APP-01"].includes(p.sku),
   );
+  areas = w.areas;
 });
 after(() => pool.end());
 test("B26 Cairo DST day uses UTC start and exclusive next-day boundary", async () => {
@@ -347,7 +348,7 @@ test("B09 B10 last stock contention and rollback of all products", async () => {
   const product = await admin().ok("products", "POST", {
     name: "اختبار تنافس " + randomUUID(),
     sku: randomUUID(),
-    unit: "كرتونة",
+    unit: "عبوة",
     active: true,
   });
   await admin().ok("inventory/openings", "POST", {
@@ -676,6 +677,7 @@ test("B02 password reset, forced password change, logout invalidate sessions", a
     username: randomUUID(),
     name: "اختبار جلسة",
     roles: ["SALES_REP"],
+    areaIds: [areas[0].id],
     active: true,
   });
   const c = new Client({
@@ -702,6 +704,102 @@ test("B02 password reset, forced password change, logout invalidate sessions", a
   assert.equal((await c.call("auth/me")).status, 401);
   await clients.REP2.ok("auth/logout", "POST", {});
   assert.equal((await clients.REP2.call("auth/me")).status, 401);
+});
+test("sales areas restrict representatives while administrators manage areas and keep their session", async () => {
+  assert.equal(areas.length >= 10, true);
+  assert.ok(products.every((product) => product.unit === "عبوة"));
+
+  const createdArea = await admin().ok("areas", "POST", {
+    name: "منطقة اختبار " + randomUUID(),
+    active: true,
+  });
+  const renamedArea = await admin().ok("areas/" + createdArea.id, "PATCH", {
+    name: createdArea.name + " معدلة",
+    active: true,
+    expectedVersion: createdArea.version,
+  });
+  assert.match(renamedArea.name, /معدلة$/);
+
+  const representative = await admin().ok("users", "POST", {
+    username: randomUUID(),
+    name: "مندوب نطاق اختبار",
+    roles: ["SALES_REP"],
+    areaIds: [areas[0].id],
+    active: true,
+  });
+  const assignedCustomer = await fin().ok("customers", "POST", {
+    name: "عميل داخل النطاق " + randomUUID(),
+    code: randomUUID(),
+    phone: "",
+    defaultAddress: "عنوان داخل النطاق",
+    areaId: areas[0].id,
+    active: true,
+  });
+  const outsideCustomer = await fin().ok("customers", "POST", {
+    name: "عميل خارج النطاق " + randomUUID(),
+    code: randomUUID(),
+    phone: "",
+    defaultAddress: "عنوان خارج النطاق",
+    areaId: areas[1].id,
+    active: true,
+  });
+  const scoped = new Client({
+    username: representative.username,
+    password: representative.temporaryPassword,
+  });
+  await scoped.login();
+  const nextPassword = randomUUID() + "pass";
+  await scoped.ok("auth/change-password", "POST", {
+    currentPassword: representative.temporaryPassword,
+    newPassword: nextPassword,
+  });
+  scoped.account.password = nextPassword;
+  await scoped.login();
+  const workspace = await scoped.ok("workspace");
+  assert.ok(
+    workspace.customers.some((item) => item.id === assignedCustomer.id),
+  );
+  assert.ok(
+    !workspace.customers.some((item) => item.id === outsideCustomer.id),
+  );
+  assert.equal(workspace.areas.length, 1);
+  assert.equal(workspace.areas[0].id, areas[0].id);
+  assert.equal(
+    (
+      await scoped.call("orders", "POST", {
+        customerId: outsideCustomer.id,
+        deliveryAddress: outsideCustomer.defaultAddress,
+        notes: "",
+        items: [{ productId: products[0].id, quantity: "1" }],
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await scoped.call("orders", "POST", {
+        customerId: assignedCustomer.id,
+        deliveryAddress: assignedCustomer.defaultAddress,
+        notes: "",
+        items: [{ productId: products[0].id, quantity: "1" }],
+      })
+    ).status,
+    200,
+  );
+
+  const self = (await admin().ok("users")).find(
+    (user) => user.id === admin().account.id,
+  );
+  await admin().ok("users/" + self.id, "PATCH", {
+    username: self.username,
+    name: self.name,
+    roles: self.roles,
+    areaIds: self.areaIds,
+    active: self.active,
+    expectedVersion: self.version,
+  });
+  assert.equal((await admin().ok("auth/me")).id, self.id);
+  assert.equal((await admin().call("users")).status, 200);
 });
 test("B22 competing removal of two administrators preserves last active admin", async () => {
   const second = await admin().ok("users", "POST", {

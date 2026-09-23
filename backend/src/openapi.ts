@@ -8,6 +8,7 @@ import {
   customerSchema,
   productSchema,
   userSchema,
+  areaSchema,
   stockSchema,
   stockReceiptReviewSchema,
   version,
@@ -72,6 +73,7 @@ for (const p of [
   "users",
   "customers",
   "products",
+  "areas",
   "lookups/customers",
   "lookups/products",
   "lookups/drivers",
@@ -96,6 +98,7 @@ for (const [k, s] of Object.entries({
   users: userSchema,
   customers: customerSchema,
   products: productSchema,
+  areas: areaSchema,
 })) {
   add(k, "post", s);
   add(k + "/{id}", "patch", s);
@@ -111,7 +114,7 @@ for (const decision of ["approve", "reject"])
   add(`inventory/receipts/{id}/${decision}`, "post", stockReceiptReviewSchema);
 export const openApi = {
   openapi: "3.0.3",
-  info: { title: "Trofico Sales API", version: "2.0.0" },
+  info: { title: "Trofico Sales API", version: "2.1.0" },
   paths,
   components: {
     securitySchemes: {

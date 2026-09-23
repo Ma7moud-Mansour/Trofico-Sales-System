@@ -81,7 +81,7 @@ export async function handle(req: Request, res: Response, requestId: string) {
           requireRole(u, "SUPER_ADMIN");
           const migration = await one(
             tx,
-            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609160001_legacy_finance_queue'`,
+            `SELECT 1 FROM _prisma_migrations WHERE finished_at IS NOT NULL AND migration_name='202609230001_sales_areas'`,
           );
           check(migration, 503, "NOT_READY", "الخدمة غير جاهزة");
           return { ready: true };
@@ -126,7 +126,7 @@ export async function handle(req: Request, res: Response, requestId: string) {
     const u = await authenticate(tx, token);
     const match = path.match(/^orders\/([0-9a-f-]{36})(?:\/([a-z-]+))?$/i);
     const masterMatch = path.match(
-      /^(users|customers|products)(?:\/([0-9a-f-]{36}))?(\/reset-password)?$/i,
+      /^(users|customers|products|areas)(?:\/([0-9a-f-]{36}))?(\/reset-password)?$/i,
     );
     const receiptMatch = path.match(
       /^inventory\/receipts\/([0-9a-f-]{36})\/(approve|reject)$/i,
@@ -164,7 +164,9 @@ export async function handle(req: Request, res: Response, requestId: string) {
     if (masterMatch)
       requireRole(
         u,
-        ...(masterMatch[1] === "users" ? ["SUPER_ADMIN"] : ["FINANCE"]),
+        ...(masterMatch[1] === "users" || masterMatch[1] === "areas"
+          ? ["SUPER_ADMIN"]
+          : ["FINANCE"]),
       );
     if (receiptMatch) requireRole(u, "FINANCE");
     else if (path === "inventory/receipts") requireRole(u, "WAREHOUSE_MANAGER");
@@ -205,7 +207,11 @@ export async function handle(req: Request, res: Response, requestId: string) {
         );
       }
     } else if (masterMatch) {
-      if (masterMatch[3] && req.method === "POST") {
+      if (
+        masterMatch[1] === "users" &&
+        masterMatch[3] &&
+        req.method === "POST"
+      ) {
         const p = z
           .object({ expectedVersion: version })
           .strict()
@@ -217,7 +223,7 @@ export async function handle(req: Request, res: Response, requestId: string) {
           p.expectedVersion,
           requestId,
         );
-      } else {
+      } else if (!masterMatch[3]) {
         check(
           req.method === (masterMatch[2] ? "PATCH" : "POST"),
           404,
@@ -227,12 +233,12 @@ export async function handle(req: Request, res: Response, requestId: string) {
         result = await master(
           tx,
           u,
-          masterMatch[1] as "users" | "customers" | "products",
+          masterMatch[1] as "users" | "customers" | "products" | "areas",
           masterMatch[2],
           req.body,
           requestId,
         );
-      }
+      } else throw new ApiError(404, "NOT_FOUND", "المسار غير موجود");
     } else if (receiptMatch && req.method === "POST") {
       result = await reviewStockReceipt(
         tx,

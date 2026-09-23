@@ -189,6 +189,7 @@ export const httpServices: Omit<Services, "session"> = {
   users: { save: (r) => saveMaster("users", r) },
   customers: { save: (r) => saveMaster("customers", r) },
   products: { save: (r) => saveMaster("products", r) },
+  areas: { save: (r) => saveMaster("areas", r) },
   inventory: { list: () => request("inventory/balances") },
   activity: { list: () => request("activity") },
 };

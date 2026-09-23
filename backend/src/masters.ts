@@ -12,6 +12,7 @@ import {
   customerSchema,
   productSchema,
   userSchema,
+  areaSchema,
   stockSchema,
   stockReceiptReviewSchema,
 } from "./schemas.js";
@@ -19,19 +20,42 @@ import { customerDto, productDto } from "./orders.js";
 export async function master(
   tx: Tx,
   u: Actor,
-  kind: "users" | "customers" | "products",
+  kind: "users" | "customers" | "products" | "areas",
   id: string | undefined,
   input: unknown,
   requestId: string,
 ) {
-  requireRole(u, ...(kind === "users" ? ["SUPER_ADMIN"] : ["FINANCE"]));
+  requireRole(
+    u,
+    ...(kind === "users" || kind === "areas" ? ["SUPER_ADMIN"] : ["FINANCE"]),
+  );
   const p = (
     kind === "users"
       ? userSchema
       : kind === "customers"
         ? customerSchema
-        : productSchema
+        : kind === "products"
+          ? productSchema
+          : areaSchema
   ).parse(input) as Record<string, unknown>;
+  if (kind === "users") {
+    const roles = p.roles as string[];
+    if (!roles.includes("SALES_REP")) p.areaIds = [];
+    const areaIds = p.areaIds as string[];
+    if (areaIds.length) {
+      const valid = await one<{ n: bigint }>(
+        tx,
+        "SELECT count(*) AS n FROM areas WHERE active AND id=ANY($1::uuid[])",
+        areaIds,
+      );
+      check(
+        Number(valid!.n) === areaIds.length,
+        400,
+        "VALIDATION_ERROR",
+        "اختر مناطق نشطة وصحيحة للمندوب",
+      );
+    }
+  }
   if (id) {
     const old = await one(
       tx,
@@ -77,6 +101,23 @@ export async function master(
           "أعد تعيين طلبات السائق الجاهزة وأكمل الرحلات قبل تعطيله أو إزالة دوره",
         );
       }
+    } else if (kind === "areas" && !p.active) {
+      const used = await one<{ used: boolean }>(
+        tx,
+        `SELECT EXISTS(SELECT 1 FROM customers WHERE active AND area_id=$1::uuid)
+          OR EXISTS(
+            SELECT 1 FROM user_areas ua JOIN users u ON u.id=ua.user_id
+            JOIN user_roles r ON r.user_id=u.id AND r.role='SALES_REP'
+            WHERE u.active AND ua.area_id=$1::uuid
+          ) AS used`,
+        id,
+      );
+      check(
+        !used!.used,
+        409,
+        "AREA_IN_USE",
+        "انقل العملاء والمندوبين من المنطقة قبل تعطيلها",
+      );
     }
   } else
     check(
@@ -89,15 +130,27 @@ export async function master(
   id = id || randomUUID();
   let temporaryPassword: string | undefined;
   if (kind === "customers") {
+    const area = await one<{ active: boolean }>(
+      tx,
+      "SELECT active FROM areas WHERE id=$1::uuid",
+      p.areaId,
+    );
+    check(
+      area && (area.active || !p.active),
+      400,
+      "VALIDATION_ERROR",
+      "اختر منطقة نشطة للعميل",
+    );
     await write(
       tx,
-      `INSERT INTO customers(id,code,code_normalized,name,phone,default_address,active) VALUES($1::uuid,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET code=excluded.code,code_normalized=excluded.code_normalized,name=excluded.name,phone=excluded.phone,default_address=excluded.default_address,active=excluded.active,version=customers.version+1`,
+      `INSERT INTO customers(id,code,code_normalized,name,phone,default_address,area_id,active) VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid,$8) ON CONFLICT(id) DO UPDATE SET code=excluded.code,code_normalized=excluded.code_normalized,name=excluded.name,phone=excluded.phone,default_address=excluded.default_address,area_id=excluded.area_id,active=excluded.active,version=customers.version+1`,
       id,
       p.code,
       String(p.code).toLowerCase(),
       p.name,
       p.phone,
       p.defaultAddress,
+      p.areaId,
       p.active,
     );
   } else if (kind === "products") {
@@ -112,6 +165,16 @@ export async function master(
       p.active,
     );
     await balance(tx, id);
+  } else if (kind === "areas") {
+    await write(
+      tx,
+      `INSERT INTO areas(id,name,name_normalized,active) VALUES($1::uuid,$2,$3,$4)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name,name_normalized=excluded.name_normalized,active=excluded.active,version=areas.version+1`,
+      id,
+      p.name,
+      String(p.name).toLowerCase(),
+      p.active,
+    );
   } else {
     if (existing) {
       await write(
@@ -123,7 +186,7 @@ export async function master(
         String(p.username).toLowerCase(),
         p.active,
       );
-      await revoke(tx, id);
+      if (id !== u.id) await revoke(tx, id);
     } else {
       temporaryPassword = randomBytes(18).toString("base64url");
       await write(
@@ -140,6 +203,14 @@ export async function master(
     await write(tx, "DELETE FROM user_roles WHERE user_id=$1::uuid", id);
     for (const r of p.roles as string[])
       await write(tx, "INSERT INTO user_roles VALUES($1::uuid,$2)", id, r);
+    await write(tx, "DELETE FROM user_areas WHERE user_id=$1::uuid", id);
+    for (const areaId of p.areaIds as string[])
+      await write(
+        tx,
+        "INSERT INTO user_areas(user_id,area_id) VALUES($1::uuid,$2::uuid)",
+        id,
+        areaId,
+      );
   }
   await event(
     tx,
@@ -156,8 +227,18 @@ export async function master(
       ? await getActor(tx, id)
       : kind === "customers"
         ? customerDto(row!)
-        : productDto(row!);
+        : kind === "products"
+          ? productDto(row!)
+          : areaDto(row!);
   return { ...record, temporaryPassword };
+}
+export function areaDto(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    name: row.name,
+    active: row.active,
+    version: row.version,
+  };
 }
 export async function resetPassword(
   tx: Tx,

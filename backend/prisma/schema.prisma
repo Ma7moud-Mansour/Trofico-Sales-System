@@ -45,7 +45,21 @@ model customers {
   default_address String
   active          Boolean  @default(true)
   version         Int      @default(1)
+  area_id         String   @db.Uuid
+  areas           areas    @relation(fields: [area_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   orders          orders[]
+
+  @@index([area_id, active, name, id], map: "customers_area")
+}
+
+model areas {
+  id              String       @id @db.Uuid
+  name            String
+  name_normalized String       @unique
+  active          Boolean      @default(true)
+  version         Int          @default(1)
+  customers       customers[]
+  user_areas      user_areas[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -168,7 +182,7 @@ model orders {
   order_items             order_items[]
   users                   users              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   customers               customers?         @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  finance_reviewer        users?              @relation("orders_finance_reviewer", fields: [finance_reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  finance_reviewer        users?             @relation("orders_finance_reviewer", fields: [finance_reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reservations            reservations[]
   stock_movements         stock_movements[]
 
@@ -192,23 +206,23 @@ model products {
 }
 
 model stock_receipts {
-  id                       String     @id @db.Uuid
-  warehouse_id             String     @db.Uuid
-  product_id               String     @db.Uuid
+  id                       String    @id @db.Uuid
+  warehouse_id             String    @db.Uuid
+  product_id               String    @db.Uuid
   quantity                 Int
   reason                   String
   status                   String
-  created_by               String     @db.Uuid
+  created_by               String    @db.Uuid
   created_by_name_snapshot String
-  created_at               DateTime   @default(now()) @db.Timestamptz(6)
-  reviewed_by              String?    @db.Uuid
-  reviewed_at              DateTime?  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  reviewed_by              String?   @db.Uuid
+  reviewed_at              DateTime? @db.Timestamptz(6)
   finance_note             String?
-  version                  Int        @default(1)
-  warehouses               Warehouse  @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  products                 products   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  creator                  users      @relation("stock_receipts_creator", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  reviewer                 users?     @relation("stock_receipts_reviewer", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  version                  Int       @default(1)
+  warehouses               Warehouse @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products                 products  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  creator                  users     @relation("stock_receipts_creator", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer                 users?    @relation("stock_receipts_reviewer", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([status, created_at, id], map: "stock_receipts_queue")
 }
@@ -276,6 +290,16 @@ model user_roles {
   @@id([user_id, role])
 }
 
+model user_areas {
+  user_id String @db.Uuid
+  area_id String @db.Uuid
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  areas   areas  @relation(fields: [area_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([user_id, area_id])
+  @@index([area_id, user_id], map: "user_areas_area")
+}
+
 model users {
   id                                                     String                @id @db.Uuid
   username                                               String
@@ -299,4 +323,5 @@ model users {
   sessions                                               sessions[]
   stock_movements                                        stock_movements[]
   user_roles                                             user_roles[]
+  user_areas                                             user_areas[]
 }

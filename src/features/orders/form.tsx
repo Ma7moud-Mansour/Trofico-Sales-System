@@ -146,7 +146,7 @@ function FormContent({ id }: { id?: string }) {
   const customer = data.customers.find((c) => c.id === values.customerId);
   const totals = values.items.reduce<Record<string, number>>((acc, i) => {
     const unit =
-      data.products.find((p) => p.id === i.productId)?.unit ?? "كرتونة";
+      data.products.find((p) => p.id === i.productId)?.unit ?? "عبوة";
     const q = Number(normalizeDigits(i.quantity));
     acc[unit] = (acc[unit] ?? 0) + (Number.isSafeInteger(q) && q > 0 ? q : 0);
     return acc;
@@ -245,7 +245,8 @@ function FormContent({ id }: { id?: string }) {
                     )
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} · {c.code} · {c.phone}
+                        {c.name} · {c.code} · {c.phone} ·{" "}
+                        {data.areas.find((area) => area.id === c.areaId)?.name}
                       </option>
                     ))}
                 </select>
@@ -283,7 +284,13 @@ function FormContent({ id }: { id?: string }) {
                 />
               </label>
             </div>
-            <p className="helper">عميل غير موجود؟ تواصل مع الإدارة لإضافته.</p>
+            <p className="helper">
+              {data.user.roles.includes("SALES_REP") &&
+              !data.user.roles.includes("SUPER_ADMIN")
+                ? "تظهر هنا فقط عملاء المناطق المخصصة لك. "
+                : ""}
+              عميل غير موجود؟ تواصل مع الإدارة لإضافته.
+            </p>
           </section>
           <section className="panel padded">
             <div className="section-title">

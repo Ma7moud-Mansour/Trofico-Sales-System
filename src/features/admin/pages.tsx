@@ -7,12 +7,19 @@ import {
   Boxes,
   CheckCircle2,
   MinusCircle,
+  MapPin,
 } from "lucide-react";
 import { useApp } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Empty } from "@/components/shared";
-import { roles, type User, type Product, type Customer } from "@/domain/types";
+import {
+  roles,
+  type User,
+  type Product,
+  type Customer,
+  type Area,
+} from "@/domain/types";
 import { roleLabels, formatDate, eventLabels, cairoDay } from "@/messages/ar";
 import { services, mockEnabled } from "@/services";
 import { request } from "@/services/http";
@@ -24,6 +31,7 @@ const kindNames = {
   users: "المستخدمون",
   customers: "العملاء",
   products: "المنتجات",
+  areas: "المناطق",
 };
 export function MasterPage({ kind }: { kind: MasterKind }) {
   const { data, toast } = useApp(),
@@ -39,24 +47,43 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
       (
         r.name +
         " " +
-        ("username" in r ? r.username : "sku" in r ? r.sku : r.code)
+        ("username" in r
+          ? r.username
+          : "sku" in r
+            ? r.sku
+            : "code" in r
+              ? r.code
+              : r.name)
       ).includes(search) &&
       (!active || (active === "active") === r.active),
   );
   function create() {
     setRecord(
       kind === "users"
-        ? { id: "", name: "", username: "", roles: ["SALES_REP"], active: true }
+        ? {
+            id: "",
+            name: "",
+            username: "",
+            roles: ["SALES_REP"],
+            areaIds: data.areas
+              .filter((area) => area.active)
+              .slice(0, 1)
+              .map((area) => area.id),
+            active: true,
+          }
         : kind === "products"
-          ? { id: "", name: "", sku: "", unit: "كرتونة", active: true }
-          : {
-              id: "",
-              name: "",
-              code: "",
-              phone: "",
-              defaultAddress: "",
-              active: true,
-            },
+          ? { id: "", name: "", sku: "", unit: "عبوة", active: true }
+          : kind === "customers"
+            ? {
+                id: "",
+                name: "",
+                code: "",
+                phone: "",
+                defaultAddress: "",
+                areaId: data.areas.find((area) => area.active)?.id ?? "",
+                active: true,
+              }
+            : { id: "", name: "", active: true },
     );
     mutation.reset();
   }
@@ -68,7 +95,9 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
           ? services.users.save(record as User)
           : kind === "products"
             ? services.products.save(record as Product)
-            : services.customers.save(record as Customer),
+            : kind === "customers"
+              ? services.customers.save(record as Customer)
+              : services.areas.save(record as Area),
       )
       .then(() => {
         setRecord(null);
@@ -112,13 +141,15 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
             <thead>
               <tr>
                 <th>الاسم</th>
-                <th>الكود / اسم الدخول</th>
+                <th>{kind === "areas" ? "النطاق" : "الكود / اسم الدخول"}</th>
                 <th>
                   {kind === "users"
                     ? "الأدوار"
                     : kind === "products"
                       ? "الوحدة"
-                      : "التواصل والعنوان"}
+                      : kind === "customers"
+                        ? "التواصل والمنطقة"
+                        : "العملاء والمندوبون"}
                 </th>
                 <th>الحالة</th>
                 <th>الإجراء</th>
@@ -132,22 +163,64 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                   </td>
                   <td>
                     <bdi>
-                      {"username" in r
-                        ? r.username
-                        : "sku" in r
-                          ? r.sku
-                          : r.code}
+                      {kind === "users"
+                        ? (r as User).username
+                        : kind === "products"
+                          ? (r as Product).sku
+                          : kind === "customers"
+                            ? (r as Customer).code
+                            : "—"}
                     </bdi>
                   </td>
                   <td>
-                    {"roles" in r ? (
-                      r.roles.map((role) => roleLabels[role]).join("، ")
-                    ) : "unit" in r ? (
-                      r.unit
+                    {kind === "users" ? (
+                      <>
+                        {(r as User).roles
+                          .map((role) => roleLabels[role])
+                          .join("، ")}
+                        {(r as User).roles.includes("SALES_REP") && (
+                          <small>
+                            <MapPin size={13} />{" "}
+                            {(r as User).areaIds
+                              .map(
+                                (areaId) =>
+                                  data.areas.find((area) => area.id === areaId)
+                                    ?.name,
+                              )
+                              .filter(Boolean)
+                              .join("، ") || "لا توجد مناطق"}
+                          </small>
+                        )}
+                      </>
+                    ) : kind === "products" ? (
+                      (r as Product).unit
+                    ) : kind === "customers" ? (
+                      <>
+                        <bdi>{(r as Customer).phone}</bdi>
+                        <small>
+                          {data.areas.find(
+                            (area) => area.id === (r as Customer).areaId,
+                          )?.name ?? "منطقة غير معروفة"}
+                          {" · "}
+                          {(r as Customer).defaultAddress}
+                        </small>
+                      </>
                     ) : (
                       <>
-                        <bdi>{r.phone}</bdi>
-                        <small>{r.defaultAddress}</small>
+                        {
+                          data.customers.filter(
+                            (customer) => customer.areaId === r.id,
+                          ).length
+                        }{" "}
+                        عميل
+                        <small>
+                          {
+                            data.users.filter((user) =>
+                              user.areaIds.includes(r.id),
+                            ).length
+                          }{" "}
+                          مندوب
+                        </small>
                       </>
                     )}
                   </td>
@@ -305,7 +378,8 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                 "إدارة العملاء والمنتجات واعتماد الوارد",
                 ["FINANCE", "SUPER_ADMIN"].includes(permissionRole),
               ],
-              ["إدارة البيانات", permissionRole === "SUPER_ADMIN"],
+              ["إدارة المستخدمين والمناطق", permissionRole === "SUPER_ADMIN"],
+              ["عرض كل التحركات", permissionRole === "SUPER_ADMIN"],
             ].map(([label, allowed]) => (
               <span
                 key={String(label)}
@@ -370,6 +444,17 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                             roles: e.target.checked
                               ? [...record.roles, r]
                               : record.roles.filter((role) => role !== r),
+                            areaIds:
+                              r === "SALES_REP"
+                                ? e.target.checked
+                                  ? record.areaIds.length
+                                    ? record.areaIds
+                                    : data.areas
+                                        .filter((area) => area.active)
+                                        .slice(0, 1)
+                                        .map((area) => area.id)
+                                  : []
+                                : record.areaIds,
                           })
                         }
                       />
@@ -377,6 +462,41 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                     </label>
                   ))}
                 </fieldset>
+                {record.roles.includes("SUPER_ADMIN") && (
+                  <div className="alert info">
+                    مدير النظام يمتلك جميع الصلاحيات تلقائيًا، ويمكنه تعديل
+                    المستخدمين والمناطق وسجل العمليات.
+                  </div>
+                )}
+                {record.roles.includes("SALES_REP") && (
+                  <fieldset className="roles">
+                    <legend>مناطق المندوب *</legend>
+                    {data.areas
+                      .filter(
+                        (area) =>
+                          area.active || record.areaIds.includes(area.id),
+                      )
+                      .map((area) => (
+                        <label key={area.id}>
+                          <input
+                            type="checkbox"
+                            checked={record.areaIds.includes(area.id)}
+                            onChange={(event) =>
+                              setRecord({
+                                ...record,
+                                areaIds: event.target.checked
+                                  ? [...record.areaIds, area.id]
+                                  : record.areaIds.filter(
+                                      (id) => id !== area.id,
+                                    ),
+                              })
+                            }
+                          />
+                          {area.name}
+                        </label>
+                      ))}
+                  </fieldset>
+                )}
               </>
             )}
             {"sku" in record && (
@@ -410,6 +530,27 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                       setRecord({ ...record, code: e.target.value })
                     }
                   />
+                </label>
+                <label>
+                  المنطقة *
+                  <select
+                    required
+                    value={record.areaId}
+                    onChange={(e) =>
+                      setRecord({ ...record, areaId: e.target.value })
+                    }
+                  >
+                    <option value="">اختر المنطقة</option>
+                    {data.areas
+                      .filter(
+                        (area) => area.active || area.id === record.areaId,
+                      )
+                      .map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))}
+                  </select>
                 </label>
                 <label>
                   الهاتف

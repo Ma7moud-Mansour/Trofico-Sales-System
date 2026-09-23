@@ -31,9 +31,11 @@ export default function Page() {
   if (/^\/orders\/[^/]+$/.test(path))
     return <OrderDetail id={path.split("/")[2]} />;
   if (path === "/inventory") return <InventoryPage />;
-  if (["/users", "/customers", "/products"].includes(path))
+  if (["/users", "/customers", "/products", "/areas"].includes(path))
     return (
-      <MasterPage kind={path.slice(1) as "users" | "customers" | "products"} />
+      <MasterPage
+        kind={path.slice(1) as "users" | "customers" | "products" | "areas"}
+      />
     );
   if (path === "/activity") return <ActivityPage />;
   if (path === "/profile") return <ProfilePage />;

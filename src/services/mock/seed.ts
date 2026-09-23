@@ -5,6 +5,23 @@ import {
   type Role,
 } from "@/domain/types";
 export function createSeed(now = new Date().toISOString()): Database {
+  const areas = [
+    "منطقة الشرقية والقناة",
+    "منطقة الدقهلية ودمياط",
+    "قليوبية ومنوفية",
+    "الغربية وكفر الشيخ",
+    "البحيرة والإسكندرية",
+    "القاهرة والجيزة",
+    "الفيوم وبني سويف",
+    "المنيا وأسيوط",
+    "قنا والأقصر",
+    "المنيا وأسيوط - دوا ميكرز",
+  ].map((name, i) => ({
+    id: `a${i + 1}`,
+    name,
+    active: true,
+    version: 1,
+  }));
   const names = [
     "أحمد مصطفى",
     "سارة محمود",
@@ -42,6 +59,7 @@ export function createSeed(now = new Date().toISOString()): Database {
       "admin",
     ][i],
     roles: [rs[i]],
+    areaIds: i === 0 ? ["a1", "a6"] : i === 1 ? ["a2", "a5"] : [],
     active: true,
   }));
   const customers = [
@@ -61,6 +79,7 @@ export function createSeed(now = new Date().toISOString()): Database {
     name,
     phone: `01000000${String(i + 1).padStart(3, "0")}`,
     defaultAddress: `القاهرة، ${["مدينة نصر", "المعادي", "التجمع الخامس", "الشروق", "مصر الجديدة"][i % 5]}، شارع ${i + 10}، مبنى ${i + 1}`,
+    areaId: areas[i % areas.length].id,
     active: true,
   }));
   const products = [
@@ -80,7 +99,7 @@ export function createSeed(now = new Date().toISOString()): Database {
     id: `p${i + 1}`,
     sku: `TR-${String(i + 1).padStart(4, "0")}`,
     name,
-    unit: "كرتونة",
+    unit: "عبوة",
     active: true,
   }));
   const db: Database = {
@@ -88,6 +107,7 @@ export function createSeed(now = new Date().toISOString()): Database {
     orderSequence: 24,
     referenceTime: now,
     users,
+    areas,
     customers,
     products,
     orders: [],

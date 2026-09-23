@@ -15,6 +15,7 @@ export type Actor = {
   username: string;
   active: boolean;
   roles: string[];
+  areaIds: string[];
   version: number;
   mustChangePassword: boolean;
 };
@@ -38,7 +39,10 @@ export const cookieOptions = {
 export async function getActor(tx: Tx, id: string) {
   return one<Actor>(
     tx,
-    `SELECT u.id,u.name,u.username,u.active,u.version,u.must_change_password AS "mustChangePassword",coalesce(array_agg(r.role) FILTER(WHERE r.role IS NOT NULL),'{}') AS roles FROM users u LEFT JOIN user_roles r ON r.user_id=u.id WHERE u.id=$1::uuid GROUP BY u.id`,
+    `SELECT u.id,u.name,u.username,u.active,u.version,u.must_change_password AS "mustChangePassword",
+      coalesce((SELECT array_agg(r.role ORDER BY r.role) FROM user_roles r WHERE r.user_id=u.id),'{}') AS roles,
+      coalesce((SELECT array_agg(a.area_id::text ORDER BY a.area_id) FROM user_areas a WHERE a.user_id=u.id),'{}') AS "areaIds"
+     FROM users u WHERE u.id=$1::uuid`,
     id,
   );
 }

@@ -36,21 +36,24 @@ async function run() {
   const result = await transaction(async tx => {
     if (await one(tx, "SELECT id FROM users WHERE username_normalized='demo.sales1'")) throw Error('Demo batch already exists');
     const admin = await getActor(tx, adminRow.id);
+    const salesAreas = await rows(tx, 'SELECT id,name FROM areas WHERE active ORDER BY name,id');
+    if (!salesAreas.length) throw Error('No active sales areas found');
     const actors = {};
     for (const a of accounts) {
       await write(tx, 'INSERT INTO users(id,username,username_normalized,name,password_hash,must_change_password) VALUES($1::uuid,$2,$2,$3,$4,false)', a.id, a.username, a.name, a.hash);
       await write(tx, 'INSERT INTO user_roles VALUES($1::uuid,$2)', a.id, a.role);
+      if (a.role === 'SALES_REP') await write(tx, 'INSERT INTO user_areas(user_id,area_id) SELECT $1::uuid,id FROM areas WHERE active', a.id);
       await event(tx, admin, 'USER_CREATED', `إنشاء حساب عرض: ${a.name}`, randomUUID());
       actors[a.key] = await getActor(tx, a.id);
     }
     const customerNames = ['شركة النور للتجارة', 'مؤسسة الأمل للتوزيع', 'أسواق الصفوة', 'هايبر المدينة', 'سوبر ماركت الندى', 'شركة الرواد للتوريدات', 'أسواق الياسمين', 'مؤسسة الفجر', 'ماركت البستان', 'شركة الوفاق', 'أسواق الريان', 'مؤسسة المروة'];
-    const areas = ['مدينة نصر — القاهرة', 'المعادي — القاهرة', 'التجمع الخامس — القاهرة', 'الدقي — الجيزة', 'سموحة — الإسكندرية', 'المنصورة — الدقهلية', 'طنطا — الغربية', 'الزقازيق — الشرقية', 'شبرا — القاهرة', 'السادس من أكتوبر — الجيزة', 'العبور — القليوبية', 'الشروق — القاهرة'];
+    const deliveryAreas = ['مدينة نصر — القاهرة', 'المعادي — القاهرة', 'التجمع الخامس — القاهرة', 'الدقي — الجيزة', 'سموحة — الإسكندرية', 'المنصورة — الدقهلية', 'طنطا — الغربية', 'الزقازيق — الشرقية', 'شبرا — القاهرة', 'السادس من أكتوبر — الجيزة', 'العبور — القليوبية', 'الشروق — القاهرة'];
     const customers = [];
-    for (let i = 0; i < customerNames.length; i++) customers.push(await master(tx, admin, 'customers', undefined, { name: customerNames[i], code: `DEMO-C-${String(i + 1).padStart(3, '0')}`, phone: '', defaultAddress: areas[i], active: true }, randomUUID()));
+    for (let i = 0; i < customerNames.length; i++) customers.push(await master(tx, admin, 'customers', undefined, { name: customerNames[i], code: `DEMO-C-${String(i + 1).padStart(3, '0')}`, phone: '', defaultAddress: deliveryAreas[i], areaId: salesAreas[i % salesAreas.length].id, active: true }, randomUUID()));
     const names = ['عصير مانجو 1 لتر', 'عصير برتقال 1 لتر', 'عصير تفاح 1 لتر', 'عصير جوافة 1 لتر', 'عصير أناناس 1 لتر', 'مياه معدنية 600 مل', 'مياه معدنية 1.5 لتر', 'مشروب خوخ 250 مل', 'مشروب كوكتيل 250 مل', 'عصير رمان 1 لتر'];
     const products = [];
     for (let i = 0; i < names.length; i++) {
-      const product = await master(tx, admin, 'products', undefined, { name: names[i], sku: `DEMO-P-${String(i + 1).padStart(3, '0')}`, unit: 'كرتونة', active: true }, randomUUID());
+      const product = await master(tx, admin, 'products', undefined, { name: names[i], sku: `DEMO-P-${String(i + 1).padStart(3, '0')}`, unit: 'عبوة', active: true }, randomUUID());
       products.push(product);
       await movement(tx, actors.warehouse, await balance(tx, product.id), 'OPENING', i === 9 ? 5 : 350 + i * 45, 0, 'رصيد افتتاحي لبيانات العرض التجريبية', randomUUID());
     }
@@ -64,10 +67,10 @@ async function run() {
       const command = async (actor, type, extra = {}) => { order = await orderCommand(tx, actor, order.id, type, { expectedVersion: order.version, ...extra }, randomUUID()); };
       if (scenario !== 0) await command(rep, 'submit');
       if (scenario >= 2) await command(actors.manager, 'review', { decisions: order.items.map((item, j) => ({ itemId: item.id, status: scenario === 10 || ((scenario === 3 || scenario === 8) && j === 2) ? 'REJECTED' : 'APPROVED', reason: 'الصنف غير مناسب لاحتياج العميل الحالي' })) });
-      if (scenario === 4) await command(actors.warehouse, 'warehouse-notes', { reason: 'عصير الرمان: المطلوب 12 كرتونة والمتاح 5؛ في انتظار توريد 7 كراتين لاستكمال التجهيز.' });
+      if (scenario === 4) await command(actors.warehouse, 'warehouse-notes', { reason: 'عصير الرمان: المطلوب 12 عبوة والمتاح 5؛ في انتظار توريد 7 عبوات لاستكمال التجهيز.' });
       if ([5, 6, 7, 8, 9, 11].includes(scenario)) await command(actors.warehouse, 'warehouse-confirmation');
       const driver = i % 2 ? actors.driver2 : actors.driver1;
-      if ([6, 7, 8, 9].includes(scenario)) await command(actors.logistics, 'assignment', { driverId: driver.id, scheduledDate: today, loadingNote: 'راجع عدد الكراتين وسلامة العبوات قبل الخروج.' });
+      if ([6, 7, 8, 9].includes(scenario)) await command(actors.logistics, 'assignment', { driverId: driver.id, scheduledDate: today, loadingNote: 'راجع عدد العبوات وسلامتها قبل الخروج.' });
       if ([7, 8, 9].includes(scenario)) await command(driver, 'dispatch');
       if (scenario === 8) await command(driver, 'deliver', { recipientName: ['حسن إبراهيم', 'محمد سعيد', 'أحمد عادل'][Math.floor(i / 12)], note: 'تمت مراجعة الكميات وتسليمها كاملة بحالة جيدة.' });
       if (scenario === 9) await command(driver, 'delivery-attempts', { reasonCode: 'ABSENT', reason: 'مسؤول الاستلام غير موجود؛ تمت جدولة إعادة المحاولة.' });

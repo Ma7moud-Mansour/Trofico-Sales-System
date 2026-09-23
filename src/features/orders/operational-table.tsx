@@ -164,7 +164,7 @@ export function OperationalTable({
               {o.items
                 .filter((i) => i.approvalStatus === "APPROVED")
                 .reduce((n, i) => n + (i.approvedQuantity ?? 0), 0)}{" "}
-              كرتونة معتمدة
+              عبوة معتمدة
             </p>
             {o.assignment && (
               <p>
