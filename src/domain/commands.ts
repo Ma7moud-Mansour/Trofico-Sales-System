@@ -81,7 +81,11 @@ export function executeCommand(
       assert(
         customer?.active &&
           (actor.roles.includes("SUPER_ADMIN") ||
-            actor.areaIds.includes(customer.areaId)),
+            (actor.areaIds.some((id) =>
+              db.areas.some((a) => a.id === id && a.active),
+            ) &&
+              (actor.areaIds.includes(customer.areaId) ||
+                (!customer.areaId && customer.representativeId === actor.id)))),
         "اختر عميلًا نشطًا من المناطق المخصصة لك",
       );
     const items = selected.map((i) => {
@@ -159,7 +163,11 @@ export function executeCommand(
               c.id === o!.customerId &&
               c.active &&
               (actor.roles.includes("SUPER_ADMIN") ||
-                actor.areaIds.includes(c.areaId)),
+                (actor.areaIds.some((id) =>
+                  db.areas.some((a) => a.id === id && a.active),
+                ) &&
+                  (actor.areaIds.includes(c.areaId) ||
+                    (!c.areaId && c.representativeId === actor.id)))),
           ) &&
             o.items.every((i) =>
               db.products.some((p) => p.id === i.productId && p.active),

@@ -65,8 +65,6 @@ function read(): Database {
         user.areaIds ??= user.roles.includes("SALES_REP")
           ? [parsed.areas[index % parsed.areas.length].id]
           : [];
-      for (const [index, customer] of (parsed.customers ?? []).entries())
-        customer.areaId ??= parsed.areas[index % parsed.areas.length].id;
       for (const user of parsed.users ?? [])
         user.permissions = user.roles.includes("SUPER_ADMIN")
           ? defaults.rolePermissions.find((set) => set.role === "SUPER_ADMIN")!
@@ -161,7 +159,14 @@ function view(db: Database, u: User): ViewData {
     customers: can(u, "CUSTOMERS_MANAGE")
       ? db.customers
       : can(u, "ORDERS_CREATE")
-        ? db.customers.filter((customer) => u.areaIds.includes(customer.areaId))
+        ? db.customers.filter(
+            (customer) =>
+              u.areaIds.some((id) =>
+                db.areas.some((a) => a.id === id && a.active),
+              ) &&
+              (u.areaIds.includes(customer.areaId) ||
+                (!customer.areaId && customer.representativeId === u.id)),
+          )
         : [],
     products: can(
       u,
@@ -230,10 +235,6 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
       input.areaIds ??= [];
       if (!input.roles.includes("SALES_REP")) input.areaIds = [];
       assert(
-        !input.roles.includes("SALES_REP") || input.areaIds.length > 0,
-        "اختر منطقة واحدة على الأقل لمندوب المبيعات",
-      );
-      assert(
         input.areaIds.every((id) =>
           db.areas.some((area) => area.id === id && area.active),
         ),
@@ -260,9 +261,11 @@ async function saveMaster(kind: MasterKind, input: MasterRecord) {
     }
     if (kind === "customers" && "areaId" in input)
       assert(
-        db.areas.some(
-          (area) => area.id === input.areaId && (area.active || !input.active),
-        ),
+        !input.areaId ||
+          db.areas.some(
+            (area) =>
+              area.id === input.areaId && (area.active || !input.active),
+          ),
         "اختر منطقة نشطة للعميل",
       );
     if (kind === "areas" && !input.active)

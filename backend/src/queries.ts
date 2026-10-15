@@ -23,12 +23,19 @@ export async function workspace(tx: Tx, u: Actor) {
           getActor(tx, String(r.id)),
         ),
       )
-    : hasPermission(u, "WAREHOUSE_PREPARE")
+    : hasPermission(u, "WAREHOUSE_PREPARE", "CUSTOMERS_MANAGE")
       ? await Promise.all(
           (
             await rows(
               tx,
-              `SELECT u.id FROM users u WHERE active AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND role='DRIVER') ORDER BY u.name,u.id`,
+              `SELECT u.id FROM users u WHERE EXISTS(
+                SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND (
+                  ($1::boolean AND r.role='DRIVER' AND u.active) OR
+                  ($2::boolean AND r.role='SALES_REP')
+                )
+              ) ORDER BY u.name,u.id`,
+              hasPermission(u, "WAREHOUSE_PREPARE"),
+              hasPermission(u, "CUSTOMERS_MANAGE"),
             )
           ).map((r) => getActor(tx, String(r.id))),
         )
@@ -46,7 +53,8 @@ export async function workspace(tx: Tx, u: Actor) {
               tx,
               `SELECT c.* FROM customers c
                  WHERE c.active AND EXISTS(
-                   SELECT 1 FROM user_areas ua WHERE ua.user_id=$1::uuid AND ua.area_id=c.area_id
+                   SELECT 1 FROM user_areas ua JOIN areas a ON a.id=ua.area_id AND a.active
+                   WHERE ua.user_id=$1::uuid AND (ua.area_id=c.area_id OR (c.area_id IS NULL AND c.representative_id=$1::uuid))
                  ) ORDER BY c.name`,
               u.id,
             )
@@ -184,7 +192,8 @@ export async function readEndpoint(
           : await rows(
               tx,
               `SELECT c.* FROM customers c WHERE c.active AND EXISTS(
-                 SELECT 1 FROM user_areas ua WHERE ua.user_id=$1::uuid AND ua.area_id=c.area_id
+                 SELECT 1 FROM user_areas ua JOIN areas a ON a.id=ua.area_id AND a.active
+                 WHERE ua.user_id=$1::uuid AND (ua.area_id=c.area_id OR (c.area_id IS NULL AND c.representative_id=$1::uuid))
                ) ORDER BY c.name`,
               u.id,
             )

@@ -152,39 +152,58 @@ export async function master(
   id = id || randomUUID();
   let temporaryPassword: string | undefined;
   if (kind === "customers") {
-    const area = await one<{ active: boolean }>(
-      tx,
-      "SELECT active FROM areas WHERE id=$1::uuid",
-      p.areaId,
-    );
-    check(
-      area && (area.active || !p.active),
-      400,
-      "VALIDATION_ERROR",
-      "اختر منطقة نشطة للعميل",
-    );
+    if (p.areaId) {
+      const area = await one<{ active: boolean }>(
+        tx,
+        "SELECT active FROM areas WHERE id=$1::uuid",
+        p.areaId,
+      );
+      check(
+        area && (area.active || !p.active),
+        400,
+        "VALIDATION_ERROR",
+        "اختر منطقة نشطة للعميل",
+      );
+    }
+    if (p.representativeId) {
+      const representative = await one(
+        tx,
+        "SELECT u.id FROM users u JOIN user_roles r ON r.user_id=u.id WHERE u.id=$1::uuid AND r.role='SALES_REP' AND (u.active OR NOT $2::boolean)",
+        p.representativeId,
+        p.active,
+      );
+      check(
+        representative,
+        400,
+        "VALIDATION_ERROR",
+        "اختر مندوب مبيعات نشطًا للعميل",
+      );
+    }
     await write(
       tx,
-      `INSERT INTO customers(id,code,code_normalized,name,phone,default_address,area_id,active) VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid,$8) ON CONFLICT(id) DO UPDATE SET code=excluded.code,code_normalized=excluded.code_normalized,name=excluded.name,phone=excluded.phone,default_address=excluded.default_address,area_id=excluded.area_id,active=excluded.active,version=customers.version+1`,
+      `INSERT INTO customers(id,code,code_normalized,name,phone,default_address,area_id,active,representative_id) VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid,$8,$9::uuid) ON CONFLICT(id) DO UPDATE SET code=excluded.code,code_normalized=excluded.code_normalized,name=excluded.name,phone=excluded.phone,default_address=excluded.default_address,area_id=excluded.area_id,representative_id=excluded.representative_id,active=excluded.active,version=customers.version+1`,
       id,
       p.code,
       String(p.code).toLowerCase(),
       p.name,
       p.phone,
       p.defaultAddress,
-      p.areaId,
+      p.areaId || null,
       p.active,
+      p.representativeId || null,
     );
   } else if (kind === "products") {
     await write(
       tx,
-      `INSERT INTO products(id,sku,sku_normalized,name,unit,active) VALUES($1::uuid,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET sku=excluded.sku,sku_normalized=excluded.sku_normalized,name=excluded.name,unit=excluded.unit,active=excluded.active,version=products.version+1`,
+      `INSERT INTO products(id,sku,sku_normalized,name,unit,active,weight,weight_unit) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET sku=excluded.sku,sku_normalized=excluded.sku_normalized,name=excluded.name,unit=excluded.unit,active=excluded.active,weight=excluded.weight,weight_unit=excluded.weight_unit,version=products.version+1`,
       id,
       p.sku,
       String(p.sku).toLowerCase(),
       p.name,
       p.unit,
       p.active,
+      p.weight,
+      p.weightUnit,
     );
     await balance(tx, id);
   } else if (kind === "areas") {

@@ -134,7 +134,16 @@ export const customerSchema = z
     code: text,
     phone: z.string().trim().max(30),
     defaultAddress: z.string().trim().max(500),
-    areaId: id,
+    areaId: z
+      .union([id, z.literal("")])
+      .nullable()
+      .optional()
+      .default(""),
+    representativeId: z
+      .union([id, z.literal("")])
+      .nullable()
+      .optional()
+      .default(""),
     active: z.boolean(),
     expectedVersion: version.optional(),
   })
@@ -144,6 +153,8 @@ export const productSchema = z
     name: text,
     sku: text,
     unit: z.literal("عبوة").default("عبوة"),
+    weight: z.number().finite().positive().nullable().optional().default(null),
+    weightUnit: z.string().trim().max(30).optional().default(""),
     active: z.boolean(),
     expectedVersion: version.optional(),
   })
@@ -165,11 +176,7 @@ export const userSchema = z
     active: z.boolean(),
     expectedVersion: version.optional(),
   })
-  .strict()
-  .refine((x) => !x.roles.includes("SALES_REP") || x.areaIds.length > 0, {
-    message: "اختر منطقة واحدة على الأقل لمندوب المبيعات",
-    path: ["areaIds"],
-  });
+  .strict();
 export const areaSchema = z
   .object({
     name: text,

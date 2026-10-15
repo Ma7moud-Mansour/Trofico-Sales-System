@@ -53,7 +53,8 @@ export async function draft(
       `SELECT c.* FROM customers c
        WHERE c.id=$1::uuid AND c.active AND (
          $2::boolean OR EXISTS(
-           SELECT 1 FROM user_areas ua WHERE ua.user_id=$3::uuid AND ua.area_id=c.area_id
+           SELECT 1 FROM user_areas ua JOIN areas a ON a.id=ua.area_id AND a.active
+           WHERE ua.user_id=$3::uuid AND (ua.area_id=c.area_id OR (c.area_id IS NULL AND c.representative_id=$3::uuid))
          )
        )`,
       p.customerId,
@@ -121,7 +122,8 @@ export function customerDto(c: Row) {
     name: c.name,
     phone: c.phone,
     defaultAddress: c.default_address,
-    areaId: c.area_id,
+    areaId: c.area_id ?? "",
+    representativeId: c.representative_id ?? "",
     active: c.active,
     version: c.version,
   };
@@ -132,6 +134,8 @@ export function productDto(p: Row) {
     sku: p.sku,
     name: p.name,
     unit: p.unit,
+    weight: p.weight ?? null,
+    weightUnit: p.weight_unit ?? "",
     active: p.active,
     version: p.version,
   };
@@ -238,7 +242,8 @@ export async function orderCommand(
       `SELECT c.* FROM customers c
        WHERE c.id=$1::uuid AND c.active AND (
          $2::boolean OR EXISTS(
-           SELECT 1 FROM user_areas ua WHERE ua.user_id=$3::uuid AND ua.area_id=c.area_id
+           SELECT 1 FROM user_areas ua JOIN areas a ON a.id=ua.area_id AND a.active
+           WHERE ua.user_id=$3::uuid AND (ua.area_id=c.area_id OR (c.area_id IS NULL AND c.representative_id=$3::uuid))
          )
        )`,
       o.customerId,

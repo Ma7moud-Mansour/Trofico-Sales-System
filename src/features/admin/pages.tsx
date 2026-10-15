@@ -96,10 +96,7 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
             username: "",
             roles: ["SALES_REP"],
             permissions: [],
-            areaIds: data.areas
-              .filter((area) => area.active)
-              .slice(0, 1)
-              .map((area) => area.id),
+            areaIds: [],
             active: true,
           }
         : kind === "products"
@@ -111,7 +108,8 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                 code: "",
                 phone: "",
                 defaultAddress: "",
-                areaId: data.areas.find((area) => area.active)?.id ?? "",
+                areaId: "",
+                representativeId: "",
                 active: true,
               }
             : { id: "", name: "", active: true },
@@ -259,17 +257,20 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                         )}
                       </>
                     ) : kind === "products" ? (
-                      (r as Product).unit
+                      <>{(r as Product).unit}
+                        {(r as Product).weight != null && <small>{(r as Product).weight} {(r as Product).weightUnit}</small>}
+                      </>
                     ) : kind === "customers" ? (
                       <>
                         <bdi>{(r as Customer).phone}</bdi>
                         <small>
                           {data.areas.find(
                             (area) => area.id === (r as Customer).areaId,
-                          )?.name ?? "منطقة غير معروفة"}
+                          )?.name ?? "لم تُحدد — حسب مناطق المندوب"}
                           {" · "}
                           {(r as Customer).defaultAddress}
                         </small>
+                        {(r as Customer).representativeId && <small>المندوب: {data.users.find((u) => u.id === (r as Customer).representativeId)?.name ?? "غير متاح"}</small>}
                       </>
                     ) : (
                       <>
@@ -537,12 +538,7 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                             areaIds:
                               r === "SALES_REP"
                                 ? e.target.checked
-                                  ? record.areaIds.length
-                                    ? record.areaIds
-                                    : data.areas
-                                        .filter((area) => area.active)
-                                        .slice(0, 1)
-                                        .map((area) => area.id)
+                                  ? record.areaIds
                                   : []
                                 : record.areaIds,
                           })
@@ -560,7 +556,8 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                 )}
                 {record.roles.includes("SALES_REP") && (
                   <fieldset className="roles">
-                    <legend>مناطق المندوب *</legend>
+                    <legend>مناطق المندوب</legend>
+                    <p>يحدد المدير المناطق هنا. لن يتمكن المندوب من إنشاء طلبات للعملاء قبل تخصيص منطقة نشطة.</p>
                     {data.areas
                       .filter(
                         (area) =>
@@ -606,6 +603,16 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                   الوحدة
                   <input value={record.unit} readOnly />
                 </label>
+                <label>
+                  وزن / حجم العبوة
+                  <input type="number" min="0.001" step="any" value={record.weight ?? ""}
+                    onChange={(e) => setRecord({ ...record, weight: e.target.value === "" ? null : Number(e.target.value) })} />
+                </label>
+                <label>
+                  وحدة الوزن / الحجم
+                  <input value={record.weightUnit ?? ""}
+                    onChange={(e) => setRecord({ ...record, weightUnit: e.target.value })} />
+                </label>
               </>
             )}
             {"code" in record && (
@@ -622,15 +629,14 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                   />
                 </label>
                 <label>
-                  المنطقة *
+                  المنطقة
                   <select
-                    required
                     value={record.areaId}
                     onChange={(e) =>
                       setRecord({ ...record, areaId: e.target.value })
                     }
                   >
-                    <option value="">اختر المنطقة</option>
+                    <option value="">لم تُحدد — حسب مناطق المندوب</option>
                     {data.areas
                       .filter(
                         (area) => area.active || area.id === record.areaId,
@@ -640,6 +646,16 @@ export function MasterPage({ kind }: { kind: MasterKind }) {
                           {area.name}
                         </option>
                       ))}
+                  </select>
+                </label>
+                <label>
+                  المندوب المسؤول
+                  <select value={record.representativeId ?? ""}
+                    onChange={(e) => setRecord({ ...record, representativeId: e.target.value })}>
+                    <option value="">بدون مندوب</option>
+                    {data.users.filter((u) => u.roles.includes("SALES_REP") && (u.active || u.id === record.representativeId)).map((u) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
                   </select>
                 </label>
                 <label>

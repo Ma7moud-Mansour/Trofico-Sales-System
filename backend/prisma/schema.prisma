@@ -45,11 +45,14 @@ model customers {
   default_address String
   active          Boolean  @default(true)
   version         Int      @default(1)
-  area_id         String   @db.Uuid
-  areas           areas    @relation(fields: [area_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  area_id         String?   @db.Uuid
+  areas           areas?    @relation(fields: [area_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  representative_id String? @db.Uuid
+  representative users? @relation(fields: [representative_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   orders          orders[]
 
   @@index([area_id, active, name, id], map: "customers_area")
+  @@index([representative_id, active, name, id], map: "customers_representative")
 }
 
 model areas {
@@ -196,6 +199,8 @@ model products {
   sku_normalized     String               @unique
   name               String
   unit               String
+  weight             Float?
+  weight_unit        String @default("")
   active             Boolean              @default(true)
   version            Int                  @default(1)
   inventory_balances inventory_balances[]
@@ -331,4 +336,5 @@ model users {
   stock_movements                                        stock_movements[]
   user_roles                                             user_roles[]
   user_areas                                             user_areas[]
+  represented_customers                                 customers[]
 }

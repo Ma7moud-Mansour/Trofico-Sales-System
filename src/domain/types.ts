@@ -71,6 +71,7 @@ export interface Customer {
   phone: string;
   defaultAddress: string;
   areaId: string;
+  representativeId?: string;
   active: boolean;
 }
 export interface Product {
@@ -79,6 +80,8 @@ export interface Product {
   sku: string;
   name: string;
   unit: string;
+  weight?: number | null;
+  weightUnit?: string;
   active: boolean;
 }
 export interface OrderItem {
