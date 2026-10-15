@@ -9,11 +9,13 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { Order, ActivityEvent } from "@/domain/types";
+import { ActivityChanges } from "./activity-changes";
 import {
   statusLabels,
   outcomeLabels,
   formatDate,
   roleLabels,
+  activitySummary,
 } from "@/messages/ar";
 export function Badge({ order }: { order: Order }) {
   return (
@@ -63,12 +65,12 @@ export function Timeline({ events }: { events: ActivityEvent[] }) {
               <Check size={12} />
             </span>
             <div>
-              <strong>{e.summary}</strong>
+              <strong>{activitySummary(e)}</strong>
               <p>
                 {e.actorNameSnapshot} · {roleLabels[e.actorRole]}
               </p>
               <small>{formatDate(e.occurredAt)}</small>
-              {e.changes && <p>{e.changes}</p>}
+              <ActivityChanges changes={e.changes} />
             </div>
           </li>
         ))}

@@ -5,6 +5,7 @@ import { useApp } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Empty } from "@/components/shared";
+import { ActivityChanges } from "@/components/activity-changes";
 import {
   permissions,
   roles,
@@ -15,7 +16,7 @@ import {
   type Customer,
   type Area,
 } from "@/domain/types";
-import { roleLabels, formatDate, eventLabels, cairoDay } from "@/messages/ar";
+import { roleLabels, formatDate, eventLabels, cairoDay, activitySummary } from "@/messages/ar";
 import { services, mockEnabled } from "@/services";
 import { request } from "@/services/http";
 import { StockOperations } from "./stock-operations";
@@ -820,7 +821,7 @@ export function ActivityPage() {
       const number =
         data.orders.find((o) => o.id === e.orderId)?.orderNumber ?? "";
       return (
-        (!search || (number + e.summary).includes(search)) &&
+        (!search || (number + activitySummary(e)).includes(search)) &&
         (!actor || e.actorId === actor) &&
         (!type || e.type === type) &&
         (!from || cairoDay(e.occurredAt) >= from) &&
@@ -927,8 +928,7 @@ export function ActivityPage() {
               {rows.slice((current - 1) * 20, current * 20).map((e) => (
                 <tr key={e.id}>
                   <td>
-                    <strong>{e.summary}</strong>
-                    {e.changes && <small>{e.changes}</small>}
+                    <strong>{activitySummary(e)}</strong>
                   </td>
                   <td>
                     {e.actorNameSnapshot}
@@ -988,7 +988,7 @@ export function ActivityPage() {
         onOpenChange={(v) => !v && setSelectedEvent(null)}
         title="تفاصيل العملية"
         description={
-          event ? (eventLabels[event.type] ?? event.type) : undefined
+          event ? (eventLabels[event.type] ?? "عملية مسجلة") : undefined
         }
       >
         {event && (
@@ -1009,8 +1009,8 @@ export function ActivityPage() {
               <dd>{formatDate(event.occurredAt)}</dd>
             </dl>
             <div className="activity-detail">
-              <strong>{event.summary}</strong>
-              {event.changes && <p>{event.changes}</p>}
+              <strong>{activitySummary(event)}</strong>
+              <ActivityChanges changes={event.changes} />
             </div>
             <Button variant="outline" onClick={() => setSelectedEvent(null)}>
               إغلاق التفاصيل

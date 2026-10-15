@@ -1,4 +1,4 @@
-import type { Role, Status } from "@/domain/types";
+import type { ActivityEvent, Role, Status } from "@/domain/types";
 export const roleLabels: Record<Role, string> = {
   SALES_REP: "مندوب مبيعات",
   SALES_MANAGER: "المدير التجاري",
@@ -57,7 +57,22 @@ export const eventLabels: Record<string, string> = {
   STOCK_RECEIPT_REJECTED: "رفض وارد",
   ROLE_PERMISSIONS_UPDATED: "تعديل صلاحيات دور",
   MASTER: "تعديل البيانات الأساسية",
+  MASTER_SAVE: "تعديل البيانات الأساسية",
+  REAL_DATA_IMPORT: "استيراد بيانات العملاء والأصناف",
+  USER_CREATED: "إنشاء حساب مستخدم",
+  PASSWORD_RESET: "إعادة ضبط كلمة المرور",
 };
+export function activitySummary(event: Pick<ActivityEvent, "summary" | "type">) {
+  const master = /^(إضافة|تعديل)\s+(users|customers|products|areas)$/.exec(event.summary.trim());
+  if (master) {
+    const names: Record<string, string> = { users: "بيانات مستخدم", customers: "بيانات عميل", products: "بيانات صنف", areas: "بيانات منطقة" };
+    return `${master[1]} ${names[master[2]]}`;
+  }
+  const permissions = /^تعديل صلاحيات الدور\s+(\S+)$/.exec(event.summary.trim());
+  if (permissions)
+    return `تعديل صلاحيات ${roleLabels[permissions[1] as Role] ?? "دور مستخدم"}`;
+  return event.summary || eventLabels[event.type] || "عملية مسجلة";
+}
 export const ar = {
   name: "إدارة طلبات المبيعات",
   subtitle: "من أول طلب، حتى آخر تسليم.",
