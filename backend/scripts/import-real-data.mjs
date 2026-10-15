@@ -283,7 +283,15 @@ export async function importRealData({
     if (!admin) throw Error("An active administrator is required");
     // All operational rows were verified to belong exclusively to the disposable demo batch.
     await client.query(
-      "DELETE FROM activity_events WHERE order_id IS NOT NULL OR actor_id IN (SELECT id FROM users WHERE username_normalized LIKE 'demo.%')",
+      `DELETE FROM activity_events WHERE order_id IS NOT NULL
+        OR actor_id IN (SELECT id FROM users WHERE username_normalized LIKE 'demo.%')
+        OR (type='USER_CREATED' AND summary LIKE 'إنشاء حساب عرض:%')
+        OR (type='MASTER_SAVE' AND
+          CASE WHEN changes IS JSON THEN changes::jsonb->>'id' END IN (
+            SELECT id::text FROM customers UNION ALL SELECT id::text FROM products
+            UNION ALL SELECT u.id::text FROM users u WHERE username_normalized LIKE 'demo.%'
+              AND NOT EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role IN ('SUPER_ADMIN','SALES_MANAGER'))
+          ))`,
     );
     for (const table of [
       "delivery_attempts",
